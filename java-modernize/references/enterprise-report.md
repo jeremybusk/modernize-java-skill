@@ -77,11 +77,24 @@ The helper enforces these material invariants:
 Exit **0** means the report is valid (it may describe incomplete work); **2** means
 invalid/inconsistent/unreadable input or missing validator prerequisites. With
 `--require-complete`, valid audits and incomplete implementations exit **1**; this gate
-requires `--project-root` and checks recorded artifact hashes. Audits can complete as
+requires `--project-root`, checks recorded artifact hashes, and measures evidence age
+against actual validation time. Ordinary validation uses the report timestamp so archived
+reports remain inspectable. Audits can complete as
 audits while honestly reporting unverified candidates and checks not run.
 
+The live gate additionally requires `inputs_snapshot`: `captured_at`, a map of every
+input file to its SHA-256, and `graphs` with module paths and resolved-graph artifact IDs
+for every module. Capture after validation with `scripts/snapshot.py <project>` and add
+actual graph references; an empty graph list is deliberately incomplete. Any added,
+deleted or modified input invalidates the gate. The default scope hashes all files,
+including wrapper JARs, source/resources, build configuration and deployment/CI files,
+except directories named `.git`, `.gradle`, `target`, `build` or `.java-modernize`.
+Keep generated reports/logs under `.java-modernize` to avoid hashing the report itself.
+Resolve source directories/symlinks or relevant external settings outside this scope
+before claiming coverage. Enumeration/access/size failures reject the gate.
+
 The validator does not execute commands, resolve versions, authenticate sources, discover
-omitted checks/files, assess exception approvals, or establish the truth of reported
+external inputs or required checks, assess exception approvals, or establish the truth of reported
 results. Reviewers must compare required checks and policy to the actual project. Changes
 outside the recorded input/artifact set require renewed review; do not reuse a green
 report for a different revision or graph. Package or report validation alone does not

@@ -46,3 +46,17 @@ final independent rerun now catch that behavior.
 
 The default suite passes 33 tests and skips the five explicitly selected network/
 toolchain integrations. Skill metadata validation and whitespace checks also pass.
+
+## Step 2 — live completion gate and input snapshots
+
+The release gate now measures evidence age against validation time, rejects future
+reports, and requires a bounded age plus a complete local input snapshot. It checks
+the exact input set/hashes and requires graph artifact references for each module.
+Ordinary validation still checks historical reports against their recorded timestamp.
+Snapshot enumeration fails on unreadable files, symlinks and coverage bounds; wrapper
+JARs and all non-generated project files are included. The exclusions are documented.
+
+Validation: 37 default tests pass, five full-build tests skip; added live stale/future,
+added/changed/deleted input, graph coverage and symlink/wrapper cases. Example report,
+skill metadata and whitespace checks pass. Actual execution provenance is addressed
+in step 4; supplied graph/log references do not yet prove a command was executed.

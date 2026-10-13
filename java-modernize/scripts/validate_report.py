@@ -2,12 +2,14 @@
 """Validate report shape, consistency and optional local artifact hashes. No builds/network."""
 
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
 import re
 import sys
+
+from snapshot import capture
 
 
 SCHEMA = Path(__file__).resolve().parents[1] / "assets/enterprise-report.schema.json"
@@ -35,7 +37,7 @@ def unique_ids(items, location, errors):
     return set(ids)
 
 
-def validate(report, project_root=None):
+def validate(report, project_root=None, *, require_complete=False, now=None):
     try:
         from jsonschema import Draft202012Validator, FormatChecker
     except ImportError:
@@ -59,6 +61,13 @@ def validate(report, project_root=None):
 
     generated = timestamp(report["generated_at"])
     complete = report["status"] == "complete" and report["mode"] != "audit"
+    validation_time = now or datetime.now(timezone.utc)
+    age_origin = validation_time if require_complete else generated
+    if require_complete and complete:
+        if generated > validation_time:
+            errors.append("/generated_at: report is later than validation time")
+        if report["policy"]["evidence_max_age_days"] is None:
+            errors.append("/policy: completion needs a bounded evidence age")
     artifact_ids = unique_ids(report["artifacts"], "/artifacts", errors)
     unique_ids(report["components"], "/components", errors)
     unique_ids(report["checks"], "/checks", errors)
@@ -96,7 +105,7 @@ def validate(report, project_root=None):
                 errors.append(f"/components/{i}: verified freshness lacks source evidence")
             if component["compatibility"] != "verified" or component["availability"] != "available":
                 errors.append(f"/components/{i}: verified freshness contradicts candidate state")
-            if age is not None and any(generated - timestamp(e["checked_at"]) > timedelta(days=age) for e in component["evidence"]):
+            if age is not None and any(age_origin - timestamp(e["checked_at"]) > timedelta(days=age) for e in component["evidence"]):
                 errors.append(f"/components/{i}: evidence exceeds policy age")
         if not any(c["action"] != "defer" for c in report["components"]):
             errors.append("/freshness: verified freshness needs assessed components")
@@ -154,6 +163,28 @@ def validate(report, project_root=None):
         root = Path(project_root).resolve(strict=True)
         if not root.is_dir():
             raise ValueError("Project root must be a directory")
+    if require_complete and complete:
+        snapshot = report.get("inputs_snapshot")
+        if not snapshot or root is None:
+            errors.append("/inputs_snapshot: completion needs a complete local input snapshot")
+        else:
+            captured = timestamp(snapshot["captured_at"])
+            age = report["policy"]["evidence_max_age_days"]
+            if captured > generated or (age is not None and validation_time - captured > timedelta(days=age)):
+                errors.append("/inputs_snapshot: capture timestamp is future or stale")
+            if any(not safe_path(path) for path in snapshot["files"]):
+                errors.append("/inputs_snapshot: unsafe input path")
+            try:
+                if snapshot["files"] != capture(root):
+                    errors.append("/inputs_snapshot: current input set or hashes differ from validated inputs")
+            except (OSError, ValueError):
+                errors.append("/inputs_snapshot: cannot verify complete input coverage")
+            graphs = snapshot["graphs"]
+            if sorted(g["module"] for g in graphs) != sorted(module_paths):
+                errors.append("/inputs_snapshot/graphs: resolved graph evidence needs every module exactly once")
+            for graph in graphs:
+                if not set(graph["artifact_ids"]).issubset(artifact_ids):
+                    errors.append("/inputs_snapshot/graphs: unknown graph artifact reference")
     for i, artifact in enumerate(report["artifacts"]):
         if not safe_path(artifact["path"]):
             errors.append(f"/artifacts/{i}/path: unsafe project-relative path")
@@ -206,7 +237,7 @@ def main():
         if len(raw) > MAX_REPORT_BYTES:
             raise ValueError("Report size limit")
         report = json.loads(raw, object_pairs_hook=no_duplicates, parse_constant=reject_constant)
-        errors = validate(report, args.project_root)
+        errors = validate(report, args.project_root, require_complete=args.require_complete)
     except (OSError, ValueError, UnicodeError, RuntimeError, RecursionError):
         print("Cannot validate report: check input, project root and pre-provisioned jsonschema 4.x", file=sys.stderr)
         return 2

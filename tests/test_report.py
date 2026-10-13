@@ -1,6 +1,7 @@
 """Report gates prevent incomplete/contradictory evidence from being accepted as complete."""
 
 import copy
+from datetime import datetime, timedelta, timezone
 import hashlib
 import importlib.util
 import json
@@ -13,6 +14,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "java-modernize/scripts/validate_report.py"
+sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("validate_report", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
@@ -41,6 +43,7 @@ class ReportTests(unittest.TestCase):
             (self.root / name).write_bytes(content)
             artifacts.append({"id": artifact_id, "path": name, "sha256": hashlib.sha256(content).hexdigest()})
         report["artifacts"] = artifacts
+        report["inputs_snapshot"] = {"captured_at": report["generated_at"], "files": MODULE.capture(self.root), "graphs": [{"module": report["modules"][0]["path"], "artifact_ids": ["build-log"]}]}
         report["checks"] = [
             {"id": "build", "kind": "build", "required": True, "status": "passed", "command": "fixture build", "environment": "synthetic", "reason": None, "artifact_ids": ["build-log"]},
             {"id": "tests", "kind": "unit-tests", "required": True, "status": "passed", "command": "fixture tests", "environment": "synthetic", "reason": None, "artifact_ids": ["test-log"], "tests_before": 5, "tests_after": 5},
@@ -71,14 +74,59 @@ class ReportTests(unittest.TestCase):
 
     def test_complete_cli_verifies_hashes_without_executing_report_commands(self):
         report = self.completed()
+        current = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        report["generated_at"] = current
+        report["inputs_snapshot"]["captured_at"] = current
+        for evidence in report["components"][0]["evidence"]:
+            evidence["checked_at"] = current
         marker = self.root / "command-was-executed"
         report["checks"][0]["command"] = "touch command-was-executed"
-        path = self.root / "report.json"
+        (self.root / ".java-modernize").mkdir()
+        path = self.root / ".java-modernize/report.json"
         path.write_text(json.dumps(report))
         call = subprocess.run([sys.executable, str(SCRIPT), str(path), "--project-root", str(self.root), "--require-complete"], capture_output=True, text=True)
         self.assertEqual(call.returncode, 0, call.stderr + call.stdout)
         self.assertTrue(json.loads(call.stdout)["artifact_hashes_checked"])
         self.assertFalse(marker.exists())
+
+    def test_live_gate_rejects_historical_evidence_without_breaking_archive_validation(self):
+        report = self.completed()
+        self.assertEqual(MODULE.validate(report, self.root), [])
+        now = MODULE.timestamp(report["generated_at"]) + timedelta(days=30)
+        self.assertTrue(any("age" in e for e in MODULE.validate(report, self.root, require_complete=True, now=now)))
+        self.assertTrue(any("later than validation" in e for e in MODULE.validate(report, self.root, require_complete=True, now=MODULE.timestamp(report["generated_at"]) - timedelta(days=1))))
+
+    def test_input_snapshot_catches_changed_added_and_deleted_sources(self):
+        for mutation in ("add", "change", "delete"):
+            report = self.completed()
+            if mutation == "add":
+                (self.root / "New.java").write_text("class New {}")
+            elif mutation == "change":
+                (self.root / "test.log").write_text("different input")
+            else:
+                (self.root / "test.log").unlink()
+            errors = MODULE.validate(report, self.root, require_complete=True, now=MODULE.timestamp(report["generated_at"]))
+            self.assertTrue(any("input set" in e for e in errors), mutation)
+            (self.root / "New.java").unlink(missing_ok=True)
+
+    def test_live_gate_requires_snapshot_and_every_module_graph(self):
+        report = self.completed()
+        report.pop("inputs_snapshot")
+        self.assertTrue(any("snapshot" in e for e in MODULE.validate(report, self.root, require_complete=True)))
+        report = self.completed()
+        report["inputs_snapshot"]["graphs"][0]["module"] = "missing-module"
+        self.assertTrue(any("every module" in e for e in MODULE.validate(report, self.root, require_complete=True)))
+
+    def test_snapshot_rejects_symlink_input_and_preserves_wrapper_jar(self):
+        report = self.completed()
+        (self.root / "gradle/wrapper").mkdir(parents=True)
+        (self.root / "gradle/wrapper/gradle-wrapper.jar").write_bytes(b"wrapper")
+        self.assertIn("gradle/wrapper/gradle-wrapper.jar", MODULE.capture(self.root))
+        try:
+            (self.root / "source-link").symlink_to(self.root / "gradle", target_is_directory=True)
+        except OSError:
+            self.skipTest("Directory symlinks are unavailable")
+        self.assertTrue(any("coverage" in e for e in MODULE.validate(report, self.root, require_complete=True)))
 
     def test_complete_cli_cannot_omit_hash_check_root(self):
         path = self.root / "report.json"
