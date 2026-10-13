@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Java modernization run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "created_at", "updated_at", "title", "mode", "layout", "scope_kind", "scope_reason", "repositories", "phases", "findings", "batches", "next_action", "deployment"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string", "pattern": "^[0-9]{8}T[0-9]{12}Z-[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 100},
+    "created_at": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "title": {"$ref": "#/$defs/text"},
+    "mode": {"enum": ["audit", "upgrade-java", "maintain-java", "modernize-code"]},
+    "layout": {"enum": ["compact", "expanded"]},
+    "scope_kind": {"enum": ["repository", "application", "workspace"]},
+    "scope_reason": {"$ref": "#/$defs/text"},
+    "repositories": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/repository"}},
+    "phases": {
+      "type": "object", "additionalProperties": false,
+      "required": ["assessment", "plan", "execution", "validation", "completion"],
+      "properties": {
+        "assessment": {"$ref": "#/$defs/phase"}, "plan": {"$ref": "#/$defs/phase"},
+        "execution": {"$ref": "#/$defs/phase"}, "validation": {"$ref": "#/$defs/phase"},
+        "completion": {"$ref": "#/$defs/phase"}
+      }
+    },
+    "findings": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["id", "repository", "priority", "observation", "action"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "repository": {"$ref": "#/$defs/id"}, "priority": {"enum": ["critical", "high", "medium", "low"]}, "observation": {"$ref": "#/$defs/text"}, "action": {"$ref": "#/$defs/text"}}
+    }},
+    "batches": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "repositories", "depends_on", "status", "goal", "files", "validation", "recovery", "result"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "repositories": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "depends_on": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "status": {"$ref": "#/$defs/status"}, "goal": {"$ref": "#/$defs/text"},
+        "files": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+        "validation": {"$ref": "#/$defs/text"}, "recovery": {"$ref": "#/$defs/text"}, "result": {"type": "string"}
+      }
+    }},
+    "next_action": {"$ref": "#/$defs/text"},
+    "deployment": {
+      "type": "object", "additionalProperties": false, "required": ["status", "details"],
+      "properties": {"status": {"enum": ["not_in_scope", "not_run", "partial", "deployed", "unknown"]}, "details": {"$ref": "#/$defs/text"}}
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$"},
+    "status": {"enum": ["pending", "in_progress", "complete", "blocked", "stale", "not_applicable"]},
+    "binding": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {"path": {"$ref": "#/$defs/text"}, "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}}
+    },
+    "repository": {
+      "type": "object", "additionalProperties": false, "required": ["id", "path", "depends_on", "baseline", "report", "checkpoint"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "path": {"$ref": "#/$defs/text"},
+        "depends_on": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "baseline": {
+          "type": "object", "additionalProperties": false, "required": ["revision", "dirty", "description"],
+          "properties": {"revision": {"type": ["string", "null"]}, "dirty": {"type": ["boolean", "null"]}, "description": {"$ref": "#/$defs/text"}}
+        },
+        "report": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/binding"}]},
+        "checkpoint": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/binding"}]}
+      }
+    },
+    "phase": {
+      "type": "object", "additionalProperties": false, "required": ["status", "summary", "notes"],
+      "properties": {"status": {"$ref": "#/$defs/status"}, "summary": {"type": "string"}, "notes": {"type": "array", "items": {"$ref": "#/$defs/text"}}}
+    }
+  }
+}
