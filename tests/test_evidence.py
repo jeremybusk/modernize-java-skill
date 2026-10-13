@@ -85,6 +85,20 @@ class EvidenceTests(unittest.TestCase):
         command = display_argv(["tool", "--password=private", "--token", "private2", "https://user:private3@example.com"])
         self.assertNotIn("private", command)
 
+    def test_run_evidence_is_isolated_and_unsafe_run_paths_reject(self):
+        self.completed()
+        first = "20261013T120000123456Z-first"
+        second = "20261013T120000123457Z-second"
+        a = self.collect("build", "build", "print('first')", run_id=first)
+        b = self.collect("build", "build", "print('second')", run_id=second)
+        self.assertNotEqual(a["artifacts"][0]["path"], b["artifacts"][0]["path"])
+        self.assertIn("/runs/" + first + "/evidence/", a["artifacts"][0]["path"])
+        with self.assertRaises(FileExistsError):
+            self.collect("build", "build", "print('no overwrite')", run_id=first)
+        for value in ("../escape", first + "/nested", first + "\\nested"):
+            with self.assertRaises(ValueError):
+                self.collect("unsafe", "build", "raise SystemExit(99)", run_id=value)
+
     def test_baseline_xml_is_retained_and_counts_cannot_be_invented(self):
         report = self.completed()
         baseline = self.collect("baseline", "baseline", "from pathlib import Path; p=Path('target/TEST-fixture.xml'); p.parent.mkdir(exist_ok=True); p.write_text('<testsuite tests=\"3\" skipped=\"0\" failures=\"0\" errors=\"0\"/>')", test_globs=["target/TEST-*.xml"])

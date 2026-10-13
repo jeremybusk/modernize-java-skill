@@ -122,6 +122,10 @@ It supports ordinary JUnit `testsuite`/`testsuites` counters; customized reporti
 an equivalent organization-owned collector. Historical XML is not a new executed test.
 
 Outputs stay under `.java-modernize/<id>/`, and each ID must be unused. The JSON output
+can instead be grouped with timestamped documents by passing `--run-id <run-id>`; this
+stores it under `.java-modernize/runs/<run-id>/evidence/<id>/` in the same project.
+See [run documents](run-documents.md) for workspace coordination and resumption.
+In either layout, the JSON output
 supplies report `check`, `artifacts` and input snapshot fragments. Merge artifact lists
 without rewriting recorded IDs/bytes; combine module graph entries. Native Java/Maven/
 Gradle/Python commands get a version probe automatically; add explicit probes for the

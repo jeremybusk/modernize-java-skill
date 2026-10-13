@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 from urllib.parse import quote
 
-from snapshot import digest_file
+from snapshot import EXCLUDED_DIRS, capture, digest_file
 from validate_report import MAX_REPORT_BYTES, no_duplicates, reject_constant, safe_path, timestamp, validate
 
 
@@ -114,6 +114,24 @@ def validate_manifest(data):
     for name, phase in data["phases"].items():
         if phase["status"] == "not_applicable" and not (data["mode"] == "audit" and name in {"execution", "validation"}):
             raise ValueError("Only audit execution/validation may be inapplicable")
+        if phase["status"] == "complete":
+            prior = PHASES[:PHASES.index(name)]
+            if any(data["phases"][p]["status"] not in {"complete", "not_applicable"} for p in prior):
+                raise ValueError("A completed phase requires completed preceding phases")
+    batches = {b["id"]: b for b in data["batches"]}
+    for batch in batches.values():
+        if batch["status"] == "not_applicable":
+            raise ValueError("Use a documented no-op batch instead of inapplicable execution")
+        if batch["status"] in {"in_progress", "complete"} and any(batches[d]["status"] != "complete" for d in batch["depends_on"]):
+            raise ValueError("Batch dependencies must complete before execution")
+        if batch["status"] == "complete" and not batch["result"].strip():
+            raise ValueError("Completed batch requires an actual result")
+    if data["mode"] != "audit" and data["phases"]["plan"]["status"] == "complete" and not batches:
+        raise ValueError("Implementation plan requires testable batches, including a no-op if appropriate")
+    if data["mode"] != "audit" and data["phases"]["execution"]["status"] == "complete":
+        covered = {rid for b in batches.values() for rid in b["repositories"]}
+        if covered != repos or any(b["status"] != "complete" for b in batches.values()):
+            raise ValueError("Execution is incomplete across the required repository scope")
     paths = []
     for repo in data["repositories"]:
         if not safe_path(repo["path"]):
@@ -159,7 +177,13 @@ def bound_reports(data, root):
         report = read_json(path)
         if validate(report) or report["mode"] != data["mode"]:
             raise ValueError("Bound report is invalid or uses a different mode")
+        for key in ("revision", "dirty"):
+            if repo["baseline"][key] is not None and repo["baseline"][key] != report["baseline"][key]:
+                raise ValueError("Report contradicts the recorded starting baseline")
         reports[repo["id"]] = report
+    if data["phases"]["completion"]["status"] == "complete" or (data["mode"] != "audit" and data["phases"]["validation"]["status"] == "complete"):
+        if len(reports) != len(data["repositories"]) or any(r["status"] != "complete" for r in reports.values()):
+            raise ValueError("Completion requires complete reports for every repository")
     return reports
 
 
@@ -302,6 +326,132 @@ def assignments(values):
     return result
 
 
+def bind_report(manifest, repository, relative):
+    data, root = load_run(manifest)
+    repo = next((r for r in data["repositories"] if r["id"] == repository), None)
+    if repo is None:
+        raise ValueError("Unknown repository ID")
+    path = local_path(local_path(root, repo["path"]), relative)
+    repo["report"] = {"path": relative, "sha256": digest_file(path)}
+    bound_reports(data, root)
+    data["updated_at"] = utc_now()
+    write_json(Path(manifest), data)
+    render(manifest)
+
+
+def checkpoint(manifest, policies):
+    from policy import load_policy
+    data, root = load_run(manifest)
+    if not policies.keys() <= {r["id"] for r in data["repositories"]}:
+        raise ValueError("Unknown checkpoint policy repository")
+    pending = []
+    for repo in data["repositories"]:
+        project = local_path(root, repo["path"])
+        excluded, policy_hash = sorted(EXCLUDED_DIRS), None
+        if repo["id"] in policies:
+            policy, raw = load_policy(policies[repo["id"]])
+            excluded = policy["input_scope"]["excluded_dirs"]
+            policy_hash = hashlib.sha256(raw).hexdigest()
+        if ".java-modernize" not in excluded:
+            raise ValueError("Checkpoint policy must exclude generated run output")
+        record = {"schema_version": 1, "captured_at": utc_now(), "revision": git_baseline(project)["revision"], "excluded_dirs": excluded, "policy_sha256": policy_hash, "files": capture(project, excluded)}
+        name = timestamp(record["captured_at"]).strftime("%Y%m%dT%H%M%S%fZ") + "-checkpoint.json"
+        path = local_path(project, ".java-modernize/runs/" + data["run_id"] + "/" + name)
+        if path.exists():
+            raise ValueError("Checkpoint already exists")
+        pending.append((repo, project, path, record))
+    for repo, project, path, record in pending:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Exclusive create preserves previous checkpoints even if invocations overlap.
+        with path.open("x", encoding="utf-8", newline="\n") as output:
+            output.write(json.dumps(record, indent=2) + "\n")
+        repo["checkpoint"] = {"path": path.relative_to(project).as_posix(), "sha256": digest_file(path)}
+    data["updated_at"] = utc_now()
+    write_json(Path(manifest), data)
+    render(manifest)
+
+
+def resume(manifest, policies):
+    """Compare saved inputs; invalidate state without replaying edits or refreshing evidence."""
+    from policy import load_policy
+    data, root = load_run(manifest)
+    if not policies.keys() <= {r["id"] for r in data["repositories"]}:
+        raise ValueError("Unknown resume policy repository")
+    stale = set()
+    for repo in data["repositories"]:
+        project = local_path(root, repo["path"])
+        try:
+            binding = repo["checkpoint"]
+            if binding is None:
+                raise ValueError("No checkpoint")
+            path = local_path(project, binding["path"])
+            if digest_file(path) != binding["sha256"]:
+                raise ValueError("Checkpoint hash changed")
+            saved = read_json(path)
+            excluded, policy_hash = sorted(EXCLUDED_DIRS), None
+            if repo["id"] in policies:
+                policy, raw = load_policy(policies[repo["id"]])
+                excluded = policy["input_scope"]["excluded_dirs"]
+                policy_hash = hashlib.sha256(raw).hexdigest()
+            if saved["policy_sha256"] != policy_hash or set(saved["excluded_dirs"]) != set(excluded):
+                raise ValueError("Checkpoint scope or policy differs")
+            if saved["files"] != capture(project, excluded) or saved["revision"] != git_baseline(project)["revision"]:
+                raise ValueError("Checkpoint inputs or revision differ")
+            if repo["report"]:
+                report_path = local_path(project, repo["report"]["path"])
+                if digest_file(report_path) != repo["report"]["sha256"]:
+                    raise ValueError("Report drift")
+        except (OSError, ValueError, KeyError, TypeError):
+            stale.add(repo["id"])
+    # Consumers of a changed repository need reconsideration too.
+    while True:
+        affected = stale | {r["id"] for r in data["repositories"] if stale.intersection(r["depends_on"])}
+        if affected == stale:
+            break
+        stale = affected
+    if stale:
+        for phase in data["phases"].values():
+            if phase["status"] != "pending":
+                phase.update(status="stale", summary="Inputs, revision, policy, or evidence changed; reassess before continuing.")
+        affected_batches = {b["id"] for b in data["batches"] if stale.intersection(b["repositories"])}
+        while True:
+            expanded = affected_batches | {b["id"] for b in data["batches"] if affected_batches.intersection(b["depends_on"])}
+            if expanded == affected_batches:
+                break
+            affected_batches = expanded
+        for batch in data["batches"]:
+            if batch["id"] in affected_batches and batch["status"] != "pending":
+                batch["status"] = "stale"
+        data["next_action"] = "Reassess changed scope and recollect affected evidence: " + ", ".join(sorted(stale)) + ". Retained reports describe the previous state."
+        data["updated_at"] = utc_now()
+        write_json(Path(manifest), data)
+        # Do not rebind changed reports automatically. Retain prior document/evidence bytes
+        # until the author reviews the mismatch; the check command will reject drift.
+        try:
+            render(manifest)
+        except (OSError, ValueError):
+            pass
+    return sorted(stale)
+
+
+def check_completion(manifest, policies, *, now=None):
+    """Aggregate existing independent live gates; no shell or report commands execute."""
+    from policy import load_policy
+    data = render(manifest, check=True)
+    _, root = load_run(manifest)
+    if data["mode"] == "audit" or any(p["status"] != "complete" for p in data["phases"].values()):
+        raise ValueError("Run is not a completed implementation")
+    if set(policies) != {r["id"] for r in data["repositories"]}:
+        raise ValueError("Supply one independent policy per repository")
+    reports = bound_reports(data, root)
+    for repo in data["repositories"]:
+        policy, raw = load_policy(policies[repo["id"]])
+        errors = validate(reports[repo["id"]], local_path(root, repo["path"]), require_complete=True, now=now, project_policy=policy, policy_sha256=hashlib.sha256(raw).hexdigest())
+        if errors:
+            raise ValueError("Repository live completion gate failed")
+    return data
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
@@ -314,15 +464,37 @@ def main():
     init.add_argument("--layout", choices=["compact", "expanded"], default="expanded")
     init.add_argument("--scope-kind", choices=["repository", "application", "workspace"], default="repository")
     init.add_argument("--scope-reason", default="Explicit scope root selected for this modernization.")
-    for operation in ("render", "check"):
+    for operation in ("render", "check", "checkpoint", "resume", "bind-report"):
         command = commands.add_parser(operation)
         command.add_argument("manifest")
+        if operation in {"check", "checkpoint", "resume"}:
+            command.add_argument("--policy", action="append", default=[], help="ID=independently reviewed policy file (relative to cwd or absolute)")
+        if operation == "check":
+            command.add_argument("--require-complete", action="store_true", help="Run independent live completion gates for every repository")
+        if operation == "bind-report":
+            command.add_argument("--repo", required=True)
+            command.add_argument("--report", required=True, help="Path relative to that repository's root")
     args = parser.parse_args()
     try:
         if args.operation == "init":
             manifest = initialize(args.scope_root, args.slug, assignments(args.repo), title=args.title, mode=args.mode, layout=args.layout, scope_kind=args.scope_kind, scope_reason=args.scope_reason)
             print(json.dumps({"manifest": str(manifest)}))
+        elif args.operation == "bind-report":
+            bind_report(args.manifest, args.repo, args.report)
+            print('{"bound": true}')
+        elif args.operation == "checkpoint":
+            checkpoint(args.manifest, assignments(args.policy))
+            print('{"checkpoint_saved": true}')
+        elif args.operation == "resume":
+            stale = resume(args.manifest, assignments(args.policy))
+            print(json.dumps({"stale_repositories": stale, "live_completion_checked": False}))
+            return 1 if stale else 0
+        elif args.operation == "check" and args.require_complete:
+            data = check_completion(args.manifest, assignments(args.policy))
+            print(json.dumps({"valid": True, "run_id": data["run_id"], "live_completion_checked": True, "implementation_complete": True}))
         else:
+            if args.operation == "check" and args.policy:
+                raise ValueError("Use --require-complete to check independent policies")
             data = render(args.manifest, check=args.operation == "check")
             print(json.dumps({"valid": True, "run_id": data["run_id"], "live_completion_checked": False}))
     except (OSError, ValueError, RuntimeError, ImportError, UnicodeError, RecursionError) as error:
@@ -331,4 +503,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

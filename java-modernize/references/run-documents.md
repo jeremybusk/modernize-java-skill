@@ -72,12 +72,87 @@ python3 <skill>/scripts/run_documents.py render /path/to/<run-id>-run.json
 python3 <skill>/scripts/run_documents.py check /path/to/<run-id>-run.json
 ```
 
+Use `bind-report <manifest> --repo <id> --report <project-relative-path>` after reviewing
+each new evidence report; it computes the hash and rerenders. Rebinding never runs or
+repairs the report's checks. Keep baseline revision/dirty observations consistent with
+the run's initial observations. Bind reports before marking validation/completion complete.
+
 Rendering uses the [templates](../assets/run-templates/index.md), overwrites only the
 named generated Markdown documents, and leaves the JSON and evidence unchanged. Write
 explanations in phase summaries/notes, not directly in generated Markdown. `check`
 verifies the schema, relative paths, dependency graphs, report bindings, local evidence
 links, and exact Markdown/JSON consistency. It does not run builds, verify external URLs,
 or establish live completion. Report hashes detect drift, not publisher identity.
+
+## Evidence, checkpoints, and resumption
+
+Pass `--run-id <run-id>` to `collect_evidence.py` to retain each execution under
+`<repository>/.java-modernize/runs/<run-id>/evidence/<check-id>/`. For a workspace,
+use the workspace's run ID in every repository, but execute each command with its actual
+repository root and independent policy. Artifact paths remain relative to that repository;
+do not move evidence and silently rewrite hashes. Existing invocations without `--run-id`
+retain their legacy output location. A check ID must be unused within its run; retries
+need a new ID and the corresponding reviewed policy/check mapping where applicable.
+
+After recording a reviewed baseline or a finished batch, save a checkpoint:
+
+```sh
+python3 <skill>/scripts/run_documents.py checkpoint /path/to/<run-id>-run.json \
+  --policy app=/path/to/reviewed-policy.json
+python3 <skill>/scripts/run_documents.py resume /path/to/<run-id>-run.json \
+  --policy app=/path/to/reviewed-policy.json
+```
+
+Supply one `--policy ID=file` for each customized repository scope. Without a policy,
+checkpoint/resume use the documented default snapshot exclusions. The same policy bytes
+and exclusions must be supplied when resuming. Checkpoints record input hashes, revision,
+policy digest, and capture time in a new timestamped file; old checkpoints remain intact.
+
+`resume` compares current inputs, revision, policy, and report bytes. Missing/unreadable
+checkpoints mean unknown state, not unchanged state. Changes invalidate active/completed
+phases and affected batches, including dependent repositories/batches, and set an explicit
+next action. It never resets files, replays edits, runs builds, or refreshes evidence.
+Retained reports describe their earlier state. If a bound report changed, review it and
+bind it again before rendering; the helper does not bless the new bytes automatically.
+Exit 0 means the checkpoint comparison found no changes, 1 means scope needs reassessment,
+and 2 means an invalid invocation/manifest or unavailable prerequisites. Unchanged inputs
+do not prove that upstream candidates or time-limited evidence remain current.
+
+## Phase and completion rules
+
+Record phase status as `pending`, `in_progress`, `complete`, `blocked`, or `stale` with
+a summary for every non-pending phase. Completed phases require completed predecessors.
+Only audit execution/validation may use `not_applicable`, with a reason. Implementation
+plans need testable batches covering each repository; a no-op is a completed batch with
+an evidence-backed result and no changed files. Batch dependencies must complete first.
+
+Keep phase explanations concise and specific:
+
+| Phase | Record |
+| --- | --- |
+| Assessment | Scope/exclusions, baseline failures, constraints, stable finding IDs, owners, verified candidate sources, and unknowns. |
+| Plan | Ordered batch IDs, dependencies, intended behavior, files, success criteria, affected contracts, and recovery boundaries. |
+| Execution | Actual edits, deviations and their reasons, batch results/commit IDs, checkpoint, blockers, and next action. |
+| Validation | Required commands/environments, baseline versus current test counts, outcomes, retained evidence, and unavailable checks. |
+| Completion | Outcome, before/after including fixed Java targets, verified changes, remaining work, recovery, and deployment status. |
+
+`check` is an archival consistency check. A completed audit remains an audit. A completed
+implementation requires all phases and repository reports complete; to check **current**
+completion, run the live gate with independently supplied policies:
+
+```sh
+python3 <skill>/scripts/run_documents.py check /path/to/<run-id>-run.json \
+  --require-complete \
+  --policy platform=/path/to/reviewed-platform-policy.json \
+  --policy service=/path/to/reviewed-service-policy.json
+```
+
+The helper invokes the existing report validator for every repository, including current
+inputs, artifact hashes, recorded processes, test counts, graph coverage, policy bindings,
+and freshness windows. A missing policy, incomplete repository, changed input, stale
+evidence, or Markdown drift rejects the overall gate. It does not execute report commands.
+It does not certify deployment, business acceptance, or authenticity of local records.
+Deployment status remains separately recorded and requires actual external evidence.
 
 Keep relative directory structure when sharing the full run and evidence. Individual
 timestamped documents can be copied for review, but their relative evidence links need

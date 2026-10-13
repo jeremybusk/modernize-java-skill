@@ -18,6 +18,7 @@ import xml.etree.ElementTree as ET
 from policy import load_policy
 from snapshot import capture, digest_file
 from validate_report import safe_path
+from run_documents import RUN_ID, local_path
 
 
 MAX_XML_BYTES = 16 * 1024 * 1024
@@ -114,7 +115,7 @@ def version_probes(argv):
     return []
 
 
-def collect(root, policy_path, check_id, kind, argv, *, test_globs=(), graph=None, module=".", timeout=900, probes=()):
+def collect(root, policy_path, check_id, kind, argv, *, test_globs=(), graph=None, module=".", timeout=900, probes=(), run_id=None):
     root = Path(root).resolve(strict=True)
     policy, policy_bytes = load_policy(policy_path)
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", check_id) or not argv or timeout < 1:
@@ -123,10 +124,10 @@ def collect(root, policy_path, check_id, kind, argv, *, test_globs=(), graph=Non
         raise ValueError("Policy must exclude the local evidence directory")
     if module not in {m["path"] for m in policy["modules"]} or any(not safe_path(pattern) for pattern in test_globs):
         raise ValueError("Module or report scope is outside policy")
-    evidence = root / ".java-modernize"
-    if evidence.is_symlink():
-        raise ValueError("Unsafe evidence directory")
-    directory = evidence / check_id
+    if run_id is not None and (not re.fullmatch(RUN_ID, run_id) or len(run_id) > 100):
+        raise ValueError("Invalid run ID")
+    relative = ".java-modernize/" + ("runs/" + run_id + "/evidence/" if run_id else "") + check_id
+    directory = local_path(root, relative)
     # One record per execution; never silently overwrite old validation evidence.
     directory.mkdir(parents=True, exist_ok=False)
     artifacts = []
@@ -211,6 +212,7 @@ def main():
     parser.add_argument("--project", required=True)
     parser.add_argument("--policy", required=True)
     parser.add_argument("--id", required=True)
+    parser.add_argument("--run-id", help="Timestamped run ID; stores evidence within this repository's matching run directory")
     parser.add_argument("--kind", required=True, choices=["baseline", "build", "unit-tests", "integration-tests", "api", "contract", "startup", "security", "performance", "other", "resolved-graph"])
     parser.add_argument("--test-glob", action="append", default=[])
     parser.add_argument("--graph", help="Project-relative resolved graph output written by this command")
@@ -224,7 +226,7 @@ def main():
         probes = [json.loads(value) for value in args.probe_json]
         if any(not isinstance(p, list) or not p or any(not isinstance(a, str) or not a for a in p) for p in probes):
             raise ValueError("Invalid version probe")
-        result = collect(args.project, args.policy, args.id, args.kind, argv, test_globs=args.test_glob, graph=args.graph, module=args.module, timeout=args.timeout, probes=probes)
+        result = collect(args.project, args.policy, args.id, args.kind, argv, test_globs=args.test_glob, graph=args.graph, module=args.module, timeout=args.timeout, probes=probes, run_id=args.run_id)
     except (OSError, ValueError, TypeError, UnicodeError):
         parser.exit(2, "Cannot collect evidence; check explicit command, policy and local output scope\n")
     # Graph executions are input evidence, not ordinary checks in the report schema.
