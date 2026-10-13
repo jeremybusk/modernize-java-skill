@@ -105,7 +105,11 @@ execute one test before/after, preserve Java 17 bytecode, pass packaged HTTP sta
 and confirm a no-op second agent request. Harness fixture/tool-allowlist errors found
 during evaluation were corrected and affected cases rerun successfully.
 
-The remote became available during this step. Hosted step-4 CI already passed, and the
-expanded workflow will be executed after committing the locally validated step-5 work.
-Detailed platform outcomes and remaining execution status are recorded in
+The remote became available during this step. Step 5 was committed as `e9594dc` and
+pushed to `validation/java-modernize-enterprise`. The expanded hosted workflow passed
+all four platform/Python jobs and the full migration job on that exact commit. Downloaded
+CI artifacts independently confirm all five stable migrations and both native evidence
+collectors. [Run 38460355851](https://github.com/jeremybusk/modernize-java-skill/actions/runs/38460355851)
+supplies the hosted result. All five requested improvement steps are implemented and
+validated; detailed platform outcomes and bounded coverage are recorded in
 [platform-validation.md](platform-validation.md).

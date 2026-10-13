@@ -42,7 +42,21 @@ reruns. These local runs used cached dependencies in offline build mode.
 The configured repository is now `jeremybusk/modernize-java-skill`. Hosted validation
 of step 4 commit `ec9504a01f3ca34a0aa66de44a584389ed7bf03b` already passed:
 [baseline CI run](https://github.com/jeremybusk/modernize-java-skill/actions/runs/38407811260).
-The expanded step 5 workflow is pending its own committed hosted execution.
+The expanded step 5 workflow passed on exact commit
+`e9594dcec8a5f8accca85682c8c2f44bd82d5838`:
+[complete CI run](https://github.com/jeremybusk/modernize-java-skill/actions/runs/38460355851).
+All four Linux/Windows and Python 3.10/3.14 jobs passed, including hash-enforced installs,
+tests, schema examples, packaging and artifact upload. The separate migration job also
+passed every provisioning, migration, evidence-collection and artifact-retention step.
+
+Downloaded and inspected `complete-migration-evidence`: all five scenarios have one
+executed test before and after, successful startup/contract checks, successful commands
+and unchanged final reruns. Maven and Gradle native collectors each recorded one executed
+test, two tool probes and a resolved graph; four retained execution records were present.
+The observed hosted tuple was Java 8u504, Java 21.0.12.1, Java 25.0.4, Maven 3.9.12 and
+Gradle 8.14.3. Hosted execution therefore confirms the runtime matrix as well as the
+earlier wheel-only resolution checks. Results remain synthetic migration evidence;
+real applications still need their own policy, consumers and deployment validation.
 
 ## Real agent evaluations
 
