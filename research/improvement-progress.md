@@ -28,3 +28,21 @@ explicit in enterprise-validation.md.
   GitHub repository, requested from the user while local work continues.
 - Each committed step must pass relevant local validation. Integration results identify
   actual JDKs, build tools, recipes and dependency versions rather than assumed support.
+
+## Step 1 — complete migration scenarios
+
+Passed all five opt-in integration tests (121.428 seconds): actual Java 8 to 25
+two-module Maven migration, Spring Boot maintenance and major upgrades, and Gradle
+Groovy/Kotlin catalog updates with native lock regeneration. Each scenario builds,
+executes tests, starts the application before/after, checks bytecode targets and
+requires a no-op migration rerun. Gradle scenarios use manual catalog edits; they
+do not claim coverage of the Gradle OpenRewrite plugin.
+
+Executed with Maven 3.9.12, Gradle 8.14.3, Java 8u504, Java 21.0.12.1 and Java
+25.0.4+7. Recipe artifacts and fixture versions are pinned historical test inputs,
+not recommendations for the latest version. The Java migration demonstrated that
+fresh attribution can enable another transformation; bounded stabilization and a
+final independent rerun now catch that behavior.
+
+The default suite passes 33 tests and skips the five explicitly selected network/
+toolchain integrations. Skill metadata validation and whitespace checks also pass.

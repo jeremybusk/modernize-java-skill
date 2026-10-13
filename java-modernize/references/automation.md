@@ -21,6 +21,13 @@ work; they do not replace release verification, diff review, or behavior tests.
 5. Remove temporary configuration only if it was introduced solely for this run and
    is no longer useful; preserve existing project migration tooling.
 
+After changing the Java target, a fresh parse/build can expose further transformations
+to a composite recipe (for example, a newly AutoCloseable JDK type). Inspect any second
+pass diff instead of assuming one invocation is a fixed point. Use a bounded number of
+reviewed passes, validate the resulting application, and confirm a final rerun leaves
+source/configuration unchanged. Stop on oscillation, unrelated edits, or an unexplained
+semantic change; do not repeatedly apply a recipe until tests happen to pass.
+
 The current [Java 17 recipe guide](https://docs.openrewrite.org/running-recipes/popular-recipe-guides/migrate-to-java-17)
 documents changing artifact availability and access requirements. Verify the exact
 selected version at execution time. Do not assume current binaries are anonymously

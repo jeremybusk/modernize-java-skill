@@ -148,6 +148,24 @@ the checksum detects byte changes and is not an authenticity signature. It is wr
 `dist/java-modernize.zip` with `dist/java-modernize.zip.sha256`. The development tests,
 CI configuration and research notes remain outside the installable skill folder.
 
+Complete migration scenarios are described in [the fixture guide](tests/fixtures/README.md).
+The full-build profile is explicit because it resolves real dependencies, uses several
+JDKs/build tools, starts loopback-only applications and takes longer than helper tests.
+Provide actual toolchain paths and an isolated/cached repository when invoking it:
+
+```sh
+python3 scripts/run_migration_scenarios.py \
+  --jdk8 /path/to/jdk8 --jdk25 /path/to/jdk25 --jdk21 /path/to/jdk21 \
+  --gradle /path/to/gradle --maven-repo /path/to/test-maven-repository
+```
+
+Select individual `--case` values for focused validation. `--offline` is available when
+all needed artifacts are cached. The full unittest profile uses `JAVA_MODERNIZE_E2E=1`
+with `JAVA_MODERNIZE_JDK8`, `JAVA_MODERNIZE_JDK25`, `JAVA_MODERNIZE_JDK21` and
+`JAVA_MODERNIZE_GRADLE` paths; missing prerequisites fail that selected profile.
+The optional Linux x64 bootstrap helper downloads checksum-verified, pinned test JDKs
+under `/tmp`; it is never invoked automatically by the skill.
+
 ## Maintenance and license
 
 When updating the skill, re-check linked official guidance and feature statuses, test

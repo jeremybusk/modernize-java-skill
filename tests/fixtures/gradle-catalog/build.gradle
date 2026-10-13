@@ -1,0 +1,15 @@
+plugins { id 'application' }
+repositories {
+    if (System.getenv('JAVA_MODERNIZE_M2_REPO')) { maven { url = uri(System.getenv('JAVA_MODERNIZE_M2_REPO')) } }
+    mavenCentral()
+}
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+tasks.withType(JavaCompile).configureEach { options.release = 17 }
+application { mainClass = 'example.Main' }
+dependencies {
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.launcher)
+}
+test { useJUnitPlatform() }
+dependencyLocking { lockAllConfigurations() }
