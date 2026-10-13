@@ -11,6 +11,10 @@ Keep the user's Java target, compatibility promises, and chosen frameworks expli
 All paths below are relative to this skill directory. No particular agent, MCP server,
 commercial migration service, or bundled JDK is required.
 
+For enterprise projects, private repositories, shared platforms, or an explicit enterprise
+readiness request, read [enterprise operation](references/enterprise.md). Apply the
+organization's existing constraints; do not invent an approval process or compliance claim.
+
 ## 1. Establish scope and baseline
 
 Select the mode from the request; combine modes when appropriate:
@@ -34,6 +38,11 @@ Do not infer a future release is available merely from the current date.
 Read repository instructions and inspect existing work before editing. Record baseline
 build/test failures and use the project's wrappers and existing validation commands.
 Do not stop at a proposal when implementation is requested and authorized.
+
+Record the starting revision and pre-existing changes, affected modules/consumers,
+available toolchains, permitted network/repositories, and actual required checks. For
+substantial work, capture a plan with version owners, dependent batches, validation,
+and rollback boundaries using the repository's conventions. Reuse existing authorization.
 
 Read [inventory and build guidance](references/inventory-and-build.md). Optionally run:
 
@@ -79,6 +88,10 @@ Keep a compact evidence table in the modernization report:
 When network or private metadata is unavailable, label candidates **unverified** and
 record what remains to check. Do not claim that cached knowledge establishes freshness.
 
+Separate public upstream publication from availability through the approved artifact
+mirror. Check dependency, plugin, processor, toolchain, and image supply paths. A mirror
+failure does not authorize public fallback or changing credentials/trust configuration.
+
 ## 3. Plan compatible, testable batches
 
 Prioritize observed security issues, unsupported components, build/runtime blockers,
@@ -98,6 +111,10 @@ For source changes, read [code modernization](references/code-modernization.md).
 Separate behavior-preserving edits from API, persistence, concurrency, or architecture
 changes. Do not treat records, virtual threads, Jakarta, or an ORM as universal upgrades.
 
+For shared libraries/platforms, identify downstream consumers and check API/binary,
+wire, and persisted-data compatibility. Where deployment is in scope, plan mixed-version
+operation and schema compatibility before claiming rollback is possible.
+
 ## 4. Apply changes at the source of truth
 
 Update version-owning files and affected configuration, imports, APIs, CI, images,
@@ -114,6 +131,10 @@ Do not skip assertions, disable tests, weaken security, or hide obsolete JVM opt
 to make the migration pass. Preserve the user's work; stop retrying a failing approach
 when new evidence requires a different plan. Deployment, publishing, infrastructure
 replacement, and recurring automation require scope/authorization beyond local edits.
+
+Before resuming an interrupted batch, compare the current revision/configuration and
+resolved graph with recorded evidence; invalidate stale checks and candidates after
+changes. Do not reset, stash, commit, or publish existing work merely to create a checkpoint.
 
 ## 5. Validate the resulting application
 
@@ -134,6 +155,12 @@ selected versions with evidence, commands and outcomes, behavior risks, and bloc
 Mark checks **passed**, **failed**, **not run**, or **not applicable**. Distinguish
 implemented changes from recommendations and unsupported claims from verified facts.
 For audits, provide prioritized concrete changes instead of implying implementation.
+
+For enterprise work, produce a reviewable report and its JSON companion using
+[the report contract](references/enterprise-report.md), unless an existing organizational
+format already provides equivalent evidence. Validate the companion with the optional
+helper or the organization's JSON Schema tooling. The helper checks structure, consistency,
+and optionally artifact hashes; it cannot certify compatibility or deployment readiness.
 
 For repeated maintenance, re-inventory and re-check live sources on each invocation.
 If everything within scope is already current and compatible, report an evidence-backed

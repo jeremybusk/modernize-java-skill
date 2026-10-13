@@ -23,6 +23,39 @@ and [primary-source verification](research/verified-ecosystem.md).
 - Final Java idioms available at each module's API target, with contract checks.
 - Current release/compatibility evidence, staged edits, baseline comparison,
   test discovery, startup/contract checks, and honest incomplete-verification reporting.
+- Enterprise policy and private mirrors, shared-platform/consumer compatibility,
+  artifact/SBOM provenance, interrupted-run recovery, and rollback-aware release planning.
+
+## Enterprise use
+
+[Enterprise operation](java-modernize/references/enterprise.md) adds guidance for
+approved repositories, support/licensing constraints, existing security exceptions,
+API/wire/storage compatibility, and checkpoints that preserve the user's work.
+Organization-specific policies and existing authorization control the workflow.
+See [enterprise validation and its limits](research/enterprise-validation.md) for the
+executed checks, independent offline audit, source verification and remaining coverage.
+
+For substantial enterprise work, the skill produces a readable report and a
+[JSON evidence companion](java-modernize/references/enterprise-report.md). The optional
+validator checks required evidence, preserved Java targets, test counts, freshness
+windows and recorded artifact hashes. Its strict completion gate rejects incomplete
+implementations and does not treat a completed audit as a completed migration.
+
+```sh
+python3 java-modernize/scripts/validate_report.py /path/to/report.json \
+  --project-root /path/to/project --require-complete
+```
+
+Report validation needs a pre-provisioned `jsonschema` 4.x environment or equivalent
+organizational tooling. The skill/inventory do not require pip dependencies. Validator
+success checks the supplied report; human/source/build review still establishes whether
+the required checks are complete and the reported outcomes are true.
+
+The repository includes CI for Linux/Windows and Python 3.10/3.14, with a JDK 17 fixture
+environment, pinned action commits, read-only permissions, and disabled checkout credential
+persistence. It validates inventory, reports, Java API/behavior fixtures, local links,
+notices and package integrity. Actual production migrations still require the target
+application's tests, policy, deployment environment and release process.
 
 The skill verifies candidates against live sources when invoked; it does not contain
 a static list of "latest" versions or run on a schedule. Requested bot configuration
@@ -84,6 +117,8 @@ Natural-language selection depends on the host and skill discovery.
 line numbers without executing builds, resolving effective versions, making network
 calls, modifying the project, or printing configuration values. It can miss custom
 configuration; agents must inspect the actual build and resolved graph.
+For large repositories, it supports explicit config inclusions, exclusion globs and
+configuration-count limits, and reports skipped/pruned/truncated coverage.
 
 ```sh
 python3 java-modernize/scripts/inventory.py /path/to/java-project
@@ -95,6 +130,23 @@ symlinks/caches, omitted configuration values, and incomplete input reporting. B
 skill evaluation and its limitations are recorded in [validation notes](research/validation.md).
 This repository is the skill package, not a Java application; its tests cannot prove
 that every downstream project will migrate successfully.
+
+For development, use Python 3.10+ and install `requirements-dev.txt` in a permitted
+environment; CI pins the report-validator dependency. JDK 17+ enables the actual
+compile/runtime fixture tests. These verify older API targets, class-file levels,
+mutability/null/whitespace contracts and unavailable newer APIs. Set
+`JAVA_MODERNIZE_REQUIRE_JDK=1` to fail rather than skip them when a JDK is absent.
+
+Build a distribution with an internal SHA-256 file manifest and a companion ZIP checksum:
+
+```sh
+python3 scripts/package_skill.py
+```
+
+The generated archive is stable for identical inputs in the same Python/zlib environment;
+the checksum detects byte changes and is not an authenticity signature. It is written to
+`dist/java-modernize.zip` with `dist/java-modernize.zip.sha256`. The development tests,
+CI configuration and research notes remain outside the installable skill folder.
 
 ## Maintenance and license
 

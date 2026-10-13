@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "mode": "audit",
+  "status": "complete",
+  "generated_at": "2026-10-13T02:09:44Z",
+  "baseline": {
+    "revision": null,
+    "dirty": null,
+    "description": "Four raw fixtures, not a resolvable checkout. No revision or Git dirty-state evidence is available; both are recorded as null. No input edits were made. Prior POM hash differs from current POM; prior checkpoint is invalidated. No builds/tests were run."
+  },
+  "policy": {
+    "source": "Current user request and POLICY.md govern: offline/no builds/installations/edits/public fallback; Java 11 production and test runtime floors; build/compiler may use Java 21; dependency patch-only within current minor lines; retain security overrides pending advisory and owning ticket. No separate supported-release mandate or evidence age limit is specified.",
+    "require_supported_updates": false,
+    "evidence_max_age_days": null
+  },
+  "freshness": "unverified",
+  "modules": [
+    {
+      "path": ".",
+      "before": {
+        "build_jvm": null,
+        "compiler_jdk": null,
+        "compilation_target": 11,
+        "test_jvm": null,
+        "deployment_runtime": 11
+      },
+      "after": {
+        "build_jvm": null,
+        "compiler_jdk": null,
+        "compilation_target": 11,
+        "test_jvm": null,
+        "deployment_runtime": 11
+      },
+      "preserve": [
+        "compilation_target",
+        "test_jvm",
+        "deployment_runtime"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "corporate-parent",
+      "owner": "pom.xml",
+      "current": null,
+      "selected": null,
+      "action": "defer",
+      "compatibility": "unverified",
+      "availability": "unverified",
+      "support": "unverified",
+      "reason": "Declared com.example.internal:corporate-parent:7.1.0; local reference owns the upstream platform selection. Parent bytes and effective model are unavailable, so resolved current is unknown. Discover any maintenance parent candidate internally, then verify every resulting dependency stays within its existing minor line. No public lookup/fallback or replacement parent is authorized.",
+      "evidence": []
+    },
+    {
+      "id": "junit-jupiter",
+      "owner": "pom.xml",
+      "current": null,
+      "selected": null,
+      "action": "defer",
+      "compatibility": "unverified",
+      "availability": "unverified",
+      "support": "unverified",
+      "reason": "Declared org.junit.jupiter:junit-jupiter:${junit.version}, junit.version=5.14.4, test scope. Resolved/transitive engine and runner versions are unknown. Only verified stable 5.14.x patch updates compatible with Java 11 test execution are eligible; no numeric candidate or existence/freshness claim is established. JUnit 6 would leave the allowed dependency line and is not proposed.",
+      "evidence": []
+    },
+    {
+      "id": "log4j-security-override",
+      "owner": "pom.xml",
+      "current": null,
+      "selected": null,
+      "action": "defer",
+      "compatibility": "unverified",
+      "availability": "unverified",
+      "support": "unverified",
+      "reason": "Managed override org.apache.logging.log4j:log4j-core:2.24.3. Its presence in the resolved/packaged runtime is unknown; dependencyManagement alone does not establish usage. Retain the exact existing override. Do not remove it until actual advisory, governing ticket and resolved parent demonstrate inclusion of the fix. No waiver or clean-security claim is supplied. Any future dependency update must remain within 2.24.x and preserve the documented security constraint.",
+      "evidence": []
+    },
+    {
+      "id": "inherited-build-and-test-tooling",
+      "owner": "pom.xml",
+      "current": null,
+      "selected": null,
+      "action": "defer",
+      "compatibility": "unverified",
+      "availability": "unverified",
+      "support": "unverified",
+      "reason": "Effective Maven, compiler plugin, Surefire/Failsafe and other inherited tool versions/configuration are unavailable. Audit parent-owned plugin/toolchain/processor/bytecode paths when evidence is supplied; do not invent installed plugins or introduce child overrides. Build/compiler Java 21 permission does not authorize raising test or consumer runtime floors.",
+      "evidence": []
+    },
+    {
+      "id": "java-runtime-patches",
+      "owner": "POLICY.md",
+      "current": null,
+      "selected": null,
+      "action": "defer",
+      "compatibility": "unverified",
+      "availability": "unverified",
+      "support": "unverified",
+      "reason": "Production/consumer and test runtime floors are 11. Distribution, installed patch versions, support entitlement, OS/architecture and approved distribution supply path are unknown. Verify Java 11 vendor patches and support separately; no Java feature-level migration is proposed.",
+      "evidence": []
+    },
+    {
+      "id": "build-compiler-jdk",
+      "owner": "POLICY.md",
+      "current": null,
+      "selected": null,
+      "action": "defer",
+      "compatibility": "unverified",
+      "availability": "unverified",
+      "support": "unverified",
+      "reason": "Policy permits Java 21 for compiler/build JVMs; actual JVMs and patch/distribution versions are unknown. Permission is not observed installation or a selected change. Confirm compiler release=11 and separate Java 11 test/minimum-consumer execution before using any approved Java 21 build/toolchain update.",
+      "evidence": []
+    }
+  ],
+  "checks": [
+    {
+      "id": "effective-model-and-graphs",
+      "kind": "other",
+      "required": true,
+      "status": "not_run",
+      "command": null,
+      "environment": "Approved corporate repositories; actual project wrappers, settings, profiles and toolchains",
+      "reason": "Not run: builds are prohibited and the parent/current effective graphs are unavailable. Obtain effective POM and dependency/plugin/processor graphs supplied by the project owner.",
+      "artifact_ids": []
+    },
+    {
+      "id": "build-baseline",
+      "kind": "build",
+      "required": true,
+      "status": "not_run",
+      "command": null,
+      "environment": "Actual approved build/compiler JVM; preserve release 11",
+      "reason": "Not run: raw fixtures lack wrappers/source and policy prohibits build execution. Confirm actual project build command before future execution.",
+      "artifact_ids": []
+    },
+    {
+      "id": "java11-unit-tests",
+      "kind": "unit-tests",
+      "required": true,
+      "status": "not_run",
+      "command": null,
+      "environment": "Java 11 test JVM and supported minimum consumer runtime",
+      "reason": "Not run: fixtures provide no tests/results and executing builds is prohibited. Test discovery/executed/skipped counts and intended test JVM remain unknown.",
+      "artifact_ids": [],
+      "tests_before": null,
+      "tests_after": null
+    },
+    {
+      "id": "approved-availability-and-freshness",
+      "kind": "other",
+      "required": true,
+      "status": "not_run",
+      "command": null,
+      "environment": "Approved corporate mirror only",
+      "reason": "Not run: offline policy forbids metadata/network access. Publication, compatibility, approved availability and support evidence are absent; configured mirror does not establish artifact availability.",
+      "artifact_ids": []
+    },
+    {
+      "id": "security-override-review",
+      "kind": "security",
+      "required": true,
+      "status": "not_run",
+      "command": null,
+      "environment": "Actual owning security ticket, advisory and resolved platform/packaged graph",
+      "reason": "Not run: advisory/ticket/parent evidence is not provided. Preserve override; no vulnerabilities, fixes or exceptions are verified.",
+      "artifact_ids": []
+    },
+    {
+      "id": "consumer-api-contracts",
+      "kind": "api",
+      "required": false,
+      "status": "not_run",
+      "command": null,
+      "environment": "Released baseline library and representative Java 11 consumers",
+      "reason": "Not run: baseline artifacts/consumer contracts are absent. Identify existing API/binary/behavior checks when maintenance changes become concrete; this is not a newly imposed organizational gate.",
+      "artifact_ids": []
+    },
+    {
+      "id": "integration-tests",
+      "kind": "integration-tests",
+      "required": false,
+      "status": "not_run",
+      "command": null,
+      "environment": "Project-defined supported integration environments",
+      "reason": "Not run: profiles/configuration/results are absent. Applicability and existing required commands must be determined from the real project, not inferred from this fixture.",
+      "artifact_ids": []
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "pom",
+      "path": "pom.xml",
+      "sha256": "cd336fdddafb73e6548d28090374deed0c1053dfc3d1d77e0e1ef3b4b07c7653"
+    },
+    {
+      "id": "settings",
+      "path": "settings.xml",
+      "sha256": "7fd0dc745ba42a86d92c93d359cd063868a7271e1770eed5205d1f58a55952c8"
+    },
+    {
+      "id": "policy",
+      "path": "POLICY.md",
+      "sha256": "667bf751f6ab96cfe2835153de6e265b056db66dfb0e85bd1e1851a00b17bd0e"
+    },
+    {
+      "id": "previous-report",
+      "path": "previous-report.json",
+      "sha256": "7129fe56e1f5221027e4ce5fa89805b5d55dccf45d43127e6d22807b1ec88997"
+    }
+  ],
+  "constraints": [
+    "No network, builds, installation, project edits, artifact publication or deployment.",
+    "Preserve Java 11 API/bytecode target and production/minimum-consumer plus test runtime floors; actual test JVM is unknown.",
+    "Java 21 build/compiler JVMs are permitted but neither required nor observed.",
+    "Dependency updates are patch-only within existing minor lines.",
+    "Only approved corporate mirror artifacts; no public fallback or trust/credential changes.",
+    "Retain existing security override pending actual advisory and governing ticket; no security exception/approval is supplied."
+  ],
+  "limitations": [
+    "Audit deliverables are complete within the offline scope; no implementation or compatibility readiness is claimed.",
+    "All component current fields are null because this schema requests resolved versions; exact declarations are recorded in reasons. Latest available, latest compatible and selected updates are all unknown.",
+    "Compilation target 11 is a declared property; parent/plugin execution enforcing --release is unverified. deployment_runtime=11 records the supported consumer promise, not an observed runtime. test_jvm=null records unknown execution while the Java 11 floor is preserved in policy/constraints.",
+    "Prior report recorded Java 17 constraints conflicting with current policy, a seven-day evidence limit with no current source, and no usable candidate/check/source evidence. Its POM hash no longer matches. No old freshness/check/plan approval is carried forward.",
+    "No Git metadata exists in the fixture; revision and dirty state are unknown and recorded as null.",
+    "Inventory recognized two configuration files without truncation/skips. Four raw inputs were inspected manually. No effective model, sources, CI, images, wrappers, toolchain configuration, bytecode output, SBOM or resolved security scan was supplied. Their absence from this fixture does not prove absence from the real project.",
+    "POLICY.md establishes no evidence age limit, approved vendor/entitlement, mandatory supported-release rule, security advisory, ticket, or required CI commands. No missing fact is fabricated.",
+    "Local input hashes provide artifact identity, not upstream provenance, approved mirror availability or version freshness."
+  ],
+  "next_actions": [
+    "Resume only the audit structure and these new input hashes; discard incompatible prior policy/constraints and recompute any results dependent on the changed POM.",
+    "Obtain the corporate-parent:7.1.0 bytes/effective model, actual revision/pre-existing changes, wrappers/toolchains, resolved dependency/plugin/processor graphs, released artifact and supported consumer evidence without changing supplied fixtures.",
+    "Using authorized internal evidence, establish approved stable patch candidates in the existing dependency minor lines, compatible test runners/engines and separate publication, Java 11 compatibility, mirror availability and vendor support evidence. Do not query public services with private coordinates.",
+    "Obtain the actual Log4j advisory and governing ticket, confirm affected packaged versions and parent fix inclusion; retain 2.24.3 until the removal condition is proven.",
+    "When execution is separately permitted against the actual project, use its existing approved commands; validate --release 11, unit tests on Java 11 with counts, minimum-consumer/API contracts and any existing integration/security checks. Re-inventory and re-check metadata before implementation."
+  ]
+}

@@ -2,6 +2,7 @@
 """Read-only configuration inventory. Never execute a build or infer effective versions."""
 
 import argparse
+from fnmatch import fnmatchcase
 import json
 import os
 from pathlib import Path
@@ -46,6 +47,12 @@ SIGNALS = {
         r"--enable-preview|--add-opens|--add-exports|--enable-native-access|"
         r"-javaagent:|-agentlib:|-XX:|annotationProcessorPaths|<proc>"
     ),
+    "repository-or-trust": re.compile(
+        r"<mirrors>|<mirror>|<repositories>|<pluginRepositories>|<servers>|"
+        r"pluginManagement|buildscript|dependencyResolutionManagement|"
+        r"exclusiveContent|includeGroup|repositoriesMode|verification-metadata|"
+        r"distributionSha256Sum"
+    ),
 }
 
 
@@ -53,6 +60,12 @@ def category(relative):
     """Recognize likely configuration, including custom Gradle catalogs/plugins."""
     name = relative.name
     parts = relative.parts
+    if name in {"mvnw", "mvnw.cmd", "gradlew", "gradlew.bat"}:
+        return "wrapper-launcher"
+    if name.endswith((".kt", ".java", ".groovy")) and any(p in {"buildSrc", "build-logic"} for p in parts):
+        return "build-convention-source"
+    if name in {"jvm.config", "jvm.options"}:
+        return "runtime-config"
     if name == "pom.xml" or name in {"toolchains.xml", "settings.xml"}:
         return "maven"
     if ".mvn" in parts:
@@ -82,58 +95,105 @@ def category(relative):
     return None
 
 
-def inventory(root, max_file_bytes=1024 * 1024):
+def inventory(root, max_file_bytes=1024 * 1024, excludes=(), include_configs=(), max_configs=10000):
     root = Path(root).resolve(strict=True)
     if not root.is_dir():
         raise ValueError("Project root must be a directory")
-    files, skipped = [], []
+    if max_file_bytes < 1 or max_configs < 1:
+        raise ValueError("Inventory limits must be positive")
+    files, skipped, excluded_dirs = [], [], []
+    seen = set()
+    considered, excluded_files, truncated = 0, 0, False
+
+    def excluded(relative):
+        return any(fnmatchcase(relative.as_posix(), pattern) for pattern in excludes)
+
+    def inspect(path, relative, kind):
+        nonlocal considered, excluded_files, truncated
+        name = relative.as_posix()
+        if name in seen:
+            return
+        seen.add(name)
+        if excluded(relative):
+            excluded_files += 1
+            return
+        if considered >= max_configs:
+            truncated = True
+            return
+        considered += 1
+        try:
+            # Reject symlink ancestors, including explicitly included configs.
+            current = root
+            for part in relative.parts:
+                current /= part
+                if current.is_symlink():
+                    skipped.append({"path": name, "reason": "symlink"})
+                    return
+            if not path.is_file():
+                skipped.append({"path": name, "reason": "not-regular-file"})
+                return
+            with path.open("rb") as source:
+                raw = source.read(max_file_bytes + 1)
+            if len(raw) > max_file_bytes:
+                skipped.append({"path": name, "reason": "size-limit"})
+                return
+            content = raw.decode("utf-8-sig")
+        except (OSError, UnicodeError):
+            skipped.append({"path": name, "reason": "unreadable-or-non-utf8"})
+            return
+        matches = [
+            {"line": number, "signal": signal}
+            for number, line in enumerate(content.splitlines(), 1)
+            for signal, pattern in SIGNALS.items()
+            if pattern.search(line)
+        ]
+        files.append({"path": name, "category": kind, "evidence": matches})
 
     def walk_error(error):
         # Report only a path, never arbitrary file content or OS error messages.
         path = Path(error.filename) if error.filename else root
         skipped.append({"path": str(path.relative_to(root)), "reason": "unreadable-directory"})
 
+    for value in include_configs:
+        relative = Path(value)
+        if relative.is_absolute() or ".." in relative.parts or "\\" in value or ":" in value:
+            raise ValueError("Explicit configs must be project-relative")
+        inspect(root / relative, relative, category(relative) or "explicit-config")
+
     for directory, dirs, names in os.walk(root, followlinks=False, onerror=walk_error):
-        dirs[:] = sorted(d for d in dirs if d not in IGNORE_DIRS and not Path(directory, d).is_symlink())
+        keep = []
+        for name in sorted(dirs):
+            path = Path(directory, name)
+            relative = path.relative_to(root)
+            reason = "symlink-directory" if path.is_symlink() else "default-exclusion" if name in IGNORE_DIRS else "requested-exclusion" if excluded(relative) else None
+            if reason:
+                excluded_dirs.append({"path": relative.as_posix(), "reason": reason})
+            else:
+                keep.append(name)
+        dirs[:] = keep
         for name in sorted(names):
             path = Path(directory, name)
             relative = path.relative_to(root)
             kind = category(relative)
             if kind is None:
                 continue
-            if path.is_symlink():
-                skipped.append({"path": relative.as_posix(), "reason": "symlink"})
-                continue
-            try:
-                if not path.is_file():
-                    skipped.append({"path": relative.as_posix(), "reason": "not-regular-file"})
-                    continue
-                # Bound reads even if a file grows after discovery.
-                with path.open("rb") as source:
-                    raw = source.read(max_file_bytes + 1)
-                if len(raw) > max_file_bytes:
-                    skipped.append({"path": relative.as_posix(), "reason": "size-limit"})
-                    continue
-                content = raw.decode("utf-8-sig")
-            except (OSError, UnicodeError):
-                skipped.append({"path": relative.as_posix(), "reason": "unreadable-or-non-utf8"})
-                continue
-            matches = [
-                {"line": number, "signal": signal}
-                for number, line in enumerate(content.splitlines(), 1)
-                for signal, pattern in SIGNALS.items()
-                if pattern.search(line)
-            ]
-            # No raw lines, values, credentials, environment, or dependency coordinates.
-            files.append({"path": relative.as_posix(), "category": kind, "evidence": matches})
+            inspect(path, relative, kind)
+            if truncated:
+                break
+        if truncated:
+            break
     return {
         "schema_version": 1,
         "scope": "static-configuration-inventory",
         "effective_versions_resolved": False,
+        "discovery_truncated": truncated,
+        "excluded_directories": sorted(excluded_dirs, key=lambda item: item["path"]),
+        "excluded_file_count": excluded_files,
         "limitations": [
             "Signals can match comments and cannot evaluate build logic or inheritance.",
             "Generated/cache directories and symlink directories are not traversed.",
             "Only recognized configuration names are inventoried; inspect other project files as needed.",
+            "Explicit includes scan only named files; exclusions and resource limits can leave coverage incomplete.",
             "No build execution, network lookup, writes, or effective version selection occurs.",
         ],
         "files": sorted(files, key=lambda item: item["path"]),
@@ -145,13 +205,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project_root", nargs="?", default=".")
     parser.add_argument("--max-file-bytes", type=int, default=1024 * 1024)
+    parser.add_argument("--max-configs", type=int, default=10000)
+    parser.add_argument("--exclude", action="append", default=[], help="Exclude a project-relative POSIX glob; repeat as needed")
+    parser.add_argument("--include-config", action="append", default=[], help="Also inspect a named project-relative config file")
     args = parser.parse_args()
-    if args.max_file_bytes < 1:
-        parser.error("--max-file-bytes must be positive")
+    if args.max_file_bytes < 1 or args.max_configs < 1:
+        parser.error("Inventory limits must be positive")
     try:
-        result = inventory(args.project_root, args.max_file_bytes)
+        result = inventory(args.project_root, args.max_file_bytes, args.exclude, args.include_config, args.max_configs)
     except (OSError, ValueError):
-        print("Cannot read the project root as a directory", file=sys.stderr)
+        print("Cannot inventory project: check the root, config paths and resource limits", file=sys.stderr)
         return 2
     json.dump(result, sys.stdout, indent=2)
     print()

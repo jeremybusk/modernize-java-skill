@@ -60,8 +60,11 @@ class InventoryTests(unittest.TestCase):
         (outside / "pom.xml").write_text("external", encoding="utf-8")
         project = self.root / "project"
         project.mkdir()
-        (project / "pom.xml").symlink_to(outside / "pom.xml")
-        (project / "linked-module").symlink_to(outside, target_is_directory=True)
+        try:
+            (project / "pom.xml").symlink_to(outside / "pom.xml")
+            (project / "linked-module").symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest("Symlink creation is unavailable on this platform")
         result = MODULE.inventory(project)
         self.assertEqual(result["files"], [])
         self.assertEqual(result["skipped"], [{"path": "pom.xml", "reason": "symlink"}])
@@ -92,6 +95,46 @@ class InventoryTests(unittest.TestCase):
         call = subprocess.run([sys.executable, str(SCRIPT), str(self.root / "missing")], capture_output=True, text=True)
         self.assertEqual(call.returncode, 2)
         self.assertEqual(call.stdout, "")
+
+    def test_enterprise_build_sources_and_repository_signals(self):
+        self.write("build-logic/src/main/kotlin/Conventions.kt", "repositories { exclusiveContent {} }")
+        self.write("settings.gradle.kts", "dependencyResolutionManagement { repositoriesMode.set(FAIL_ON_PROJECT_REPOS) }")
+        self.write(".mvn/extensions.xml", "<extensions/>")
+        self.write("gradlew", "#!/bin/sh\nexit 99")
+        result = MODULE.inventory(self.root)
+        files = {item["path"]: item for item in result["files"]}
+        self.assertEqual(files["build-logic/src/main/kotlin/Conventions.kt"]["category"], "build-convention-source")
+        self.assertIn({"line": 1, "signal": "repository-or-trust"}, files["settings.gradle.kts"]["evidence"])
+        self.assertEqual(files["gradlew"]["category"], "wrapper-launcher")
+
+    def test_limits_and_exclusions_are_visible(self):
+        self.write("a/pom.xml", "<project/>")
+        self.write("b/pom.xml", "<project/>")
+        self.write("vendor/pom.xml", "<project/>")
+        limited = MODULE.inventory(self.root, max_configs=1)
+        self.assertTrue(limited["discovery_truncated"])
+        self.assertEqual(len(limited["files"]), 1)
+        excluded = MODULE.inventory(self.root, excludes=["vendor"])
+        self.assertFalse(excluded["discovery_truncated"])
+        self.assertEqual({f["path"] for f in excluded["files"]}, {"a/pom.xml", "b/pom.xml"})
+        self.assertIn({"path": "vendor", "reason": "requested-exclusion"}, excluded["excluded_directories"])
+
+    def test_explicit_config_does_not_escape_root_or_follow_ancestors(self):
+        self.write("build/custom.config", "maven.compiler.release=17")
+        result = MODULE.inventory(self.root, include_configs=["build/custom.config"])
+        self.assertEqual(result["files"][0]["path"], "build/custom.config")
+        with self.assertRaises(ValueError):
+            MODULE.inventory(self.root, include_configs=["../secret.config"])
+        outside = self.root / "outside"
+        outside.mkdir()
+        (outside / "secret.config").write_text("private", encoding="utf-8")
+        try:
+            (self.root / "linked").symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest("Symlink creation is unavailable on this platform")
+        linked = MODULE.inventory(self.root, include_configs=["linked/secret.config"], excludes=["outside"])
+        self.assertNotIn("linked/secret.config", {f["path"] for f in linked["files"]})
+        self.assertIn({"path": "linked/secret.config", "reason": "symlink"}, linked["skipped"])
 
 
 if __name__ == "__main__":

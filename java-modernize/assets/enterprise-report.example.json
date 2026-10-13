@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "mode": "audit",
+  "status": "partial",
+  "generated_at": "2026-10-12T18:00:00Z",
+  "baseline": {
+    "revision": null,
+    "dirty": null,
+    "description": "Example only; replace with observations from the actual project."
+  },
+  "policy": {
+    "source": "User request: retain Java 17; no organizational policy was supplied.",
+    "require_supported_updates": true,
+    "evidence_max_age_days": 7
+  },
+  "freshness": "unverified",
+  "modules": [
+    {
+      "path": ".",
+      "before": {
+        "build_jvm": null,
+        "compiler_jdk": null,
+        "compilation_target": 17,
+        "test_jvm": null,
+        "deployment_runtime": 17
+      },
+      "after": {
+        "build_jvm": null,
+        "compiler_jdk": null,
+        "compilation_target": 17,
+        "test_jvm": null,
+        "deployment_runtime": 17
+      },
+      "preserve": [
+        "compilation_target",
+        "deployment_runtime"
+      ],
+      "targets": {
+        "compilation_target": 17,
+        "deployment_runtime": 17
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "platform",
+      "owner": "pom.xml",
+      "current": null,
+      "selected": null,
+      "action": "defer",
+      "compatibility": "unverified",
+      "availability": "unverified",
+      "support": "unverified",
+      "reason": "Inspect the actual parent and approved repository before choosing a candidate.",
+      "evidence": []
+    }
+  ],
+  "checks": [
+    {
+      "id": "build",
+      "kind": "build",
+      "required": true,
+      "status": "not_run",
+      "command": null,
+      "environment": "Toolchain and build command not established.",
+      "reason": "Example template; no build has run.",
+      "artifact_ids": []
+    }
+  ],
+  "artifacts": [],
+  "constraints": [
+    "Keep Java 17 API and deployment targets."
+  ],
+  "limitations": [
+    "This example is not an audit of an actual project and establishes no freshness or passing checks."
+  ],
+  "next_actions": [
+    "Collect project baseline, policy, version owners, source evidence, and required validation."
+  ]
+}

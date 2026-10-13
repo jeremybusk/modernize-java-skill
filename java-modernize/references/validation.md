@@ -34,6 +34,11 @@ evidence. Missing infrastructure, credentials, tools, or a required runtime can 
 verification incomplete: record the blocker and exact next check instead of disabling
 tests or asserting success. Testing a production deployment requires its own scope.
 
+For enterprise runs, apply the actual policy/consumer requirements in
+[enterprise operation](enterprise.md) and include the source/evidence/checkpoint information
+from [the report contract](enterprise-report.md). A report validator checks submitted
+claims and file hashes; it does not execute or independently prove the listed checks.
+
 ## Report shape
 
 Use existing repository reporting conventions. For substantial work, a single report

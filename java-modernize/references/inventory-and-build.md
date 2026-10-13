@@ -13,6 +13,14 @@ generated/cache directories and symlinks; reports skipped/unreadable configurati
 Its text matches can include comments and miss dynamic logic. No signal is a selected
 or effective version. It is a starting point, not a parser for Maven/Gradle semantics.
 
+For large repositories, narrow irrelevant paths with repeated `--exclude` POSIX globs,
+and add unconventional configuration with `--include-config <relative-file>`. Explicit
+includes inspect only the named file, including one in an otherwise ignored directory;
+they still respect explicit exclusions and never traverse symlinks. Review
+`excluded_directories`, `skipped`, and `discovery_truncated` before describing coverage.
+`--max-configs` bounds recognized/explicit configs examined; it does not cap all directory
+entries walked. Increase limits deliberately or split module inventories when truncated.
+
 Use existing wrappers; a build is executable project code. Do not run publishing,
 release tasks, or migrations against external databases during inventory. Effective
 models are valuable when build execution is permitted:
