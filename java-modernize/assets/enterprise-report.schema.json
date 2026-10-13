@@ -357,6 +357,11 @@
                   "type": "string",
                   "minLength": 1
                 }
+              },
+              "execution_artifact_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 5000
               }
             }
           }
@@ -613,6 +618,16 @@
               "type": "null"
             }
           ]
+        },
+        "execution_artifact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "baseline_execution_artifact_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
         }
       }
     },
@@ -635,6 +650,17 @@
         "sha256": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
+        },
+        "kind": {
+          "enum": [
+            "execution",
+            "log",
+            "test-report",
+            "resolved-graph",
+            "tool-version",
+            "version-owner",
+            "other"
+          ]
         }
       }
     }

@@ -227,6 +227,23 @@ def validate(report, project_root=None, *, require_complete=False, now=None, pro
             for graph in graphs:
                 if not set(graph["artifact_ids"]).issubset(artifact_ids):
                     errors.append("/inputs_snapshot/graphs: unknown graph artifact reference")
+                from execution import verify_execution
+                execution_id = graph.get("execution_artifact_id")
+                if not execution_id:
+                    errors.append("/inputs_snapshot/graphs: graph needs collected execution evidence")
+                else:
+                    errors.extend(verify_execution(report, root, execution_id, kind="resolved-graph", policy_hash=policy_sha256, now=validation_time, module=graph["module"], graph_artifact_ids=graph["artifact_ids"]))
+                    by_id = {a["id"]: a for a in report["artifacts"]}
+                    if any(by_id.get(a, {}).get("kind") != "resolved-graph" for a in graph["artifact_ids"]):
+                        errors.append("/inputs_snapshot/graphs: graph reference is not a resolved graph artifact")
+            for check in report["checks"]:
+                if check["status"] != "passed":
+                    continue
+                execution_id = check.get("execution_artifact_id")
+                if not execution_id:
+                    errors.append("/checks: passing check needs collected execution evidence")
+                else:
+                    errors.extend(verify_execution(report, root, execution_id, kind=check["kind"], policy_hash=policy_sha256, now=validation_time, check=check))
     for i, artifact in enumerate(report["artifacts"]):
         if not safe_path(artifact["path"]):
             errors.append(f"/artifacts/{i}/path: unsafe project-relative path")

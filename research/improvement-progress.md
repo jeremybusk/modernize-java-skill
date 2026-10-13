@@ -74,3 +74,19 @@ Validation: 41 default tests pass, five integrations skip; policy and report exa
 skill metadata and whitespace checks pass. Adversarial cases remove required checks or
 weaken support, age, scope, owner, versions, Java targets and input coverage; all reject.
 Malformed/duplicate policy scope and missing builds reject. Matching policy/report passes.
+
+## Step 4 — collected execution evidence
+
+Added an explicit-command runner recording real exit codes/timeouts, input and policy
+digests, tool-version probes, logs, fresh nonzero XML test counts, and resolved graphs.
+Preserved XML/graph copies survive later clean builds. The live gate verifies execution
+records against final inputs, artifact bytes, commands, XML counters and policy. Supplied
+baseline counts require retained baseline execution evidence. No commands are read from
+reports. Local records are consistency evidence, not signed tamper-proof attestations.
+
+Validation: 46 default tests pass and six opt-in integrations skip. Real Maven 3.9.12
+and Gradle 8.14.3 collection independently passes: one executed native test per fixture,
+Maven dependency-plugin 3.11.0 JSON tree, Gradle native dependency output, and actual JVM/
+build-tool probes. The retained-copy integration rerun passes in 12.909 seconds. Failure,
+timeout, changed-input, stale/zero/failing XML, contradictory process/count/graph and
+invented baseline-count cases reject. Skill metadata and whitespace checks pass.

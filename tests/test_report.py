@@ -76,18 +76,11 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(any("test_jvm" in error for error in MODULE.validate(report)))
 
     def test_complete_cli_verifies_hashes_without_executing_report_commands(self):
-        report = self.completed()
-        current = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        report["generated_at"] = current
-        report["inputs_snapshot"]["captured_at"] = current
-        for evidence in report["components"][0]["evidence"]:
-            evidence["checked_at"] = current
+        report = self.with_collected_evidence(self.completed())
         marker = self.root / "command-was-executed"
-        report["checks"][0]["command"] = "touch command-was-executed"
-        (self.root / ".java-modernize").mkdir()
         path = self.root / ".java-modernize/report.json"
         policy_path = path.parent / "policy.json"
-        policy_bytes = (json.dumps(self.policy) + "\n").encode()
+        policy_bytes = json.dumps(self.policy).encode()
         policy_path.write_bytes(policy_bytes)
         report["policy_binding"] = {"sha256": hashlib.sha256(policy_bytes).hexdigest()}
         path.write_text(json.dumps(report))
@@ -142,7 +135,25 @@ class ReportTests(unittest.TestCase):
         return MODULE.validate(report, self.root, require_complete=True, now=MODULE.timestamp(report["generated_at"]), project_policy=policy, policy_sha256=digest)
 
     def test_policy_gate_accepts_matching_reviewed_scope(self):
-        self.assertEqual(self.policy_gate(self.completed()), [])
+        self.assertEqual(self.policy_gate(self.with_collected_evidence(self.completed())), [])
+
+    def with_collected_evidence(self, report):
+        # Synthetic process/XML fixtures test evidence plumbing, not Java semantics.
+        from collect_evidence import collect
+        directory = self.root / ".java-modernize"
+        directory.mkdir(exist_ok=True)
+        policy_path = directory / "policy.json"
+        policy_path.write_text(json.dumps(self.policy))
+        build = collect(self.root, policy_path, "build", "build", [sys.executable, "-c", "print('touch command-was-executed')"])
+        tests = collect(self.root, policy_path, "tests", "unit-tests", [sys.executable, "-c", "from pathlib import Path; p=Path('target/TEST-fixture.xml'); p.parent.mkdir(exist_ok=True); p.write_text('<testsuite tests=\"5\" skipped=\"0\" failures=\"0\" errors=\"0\"/>')"], test_globs=["target/TEST-*.xml"])
+        graph = collect(self.root, policy_path, "graph", "resolved-graph", [sys.executable, "-c", "from pathlib import Path; Path('target/graph.json').write_text('{\"fixture\":\"synthetic\"}')"], graph="target/graph.json")
+        report["checks"] = [build["check"], tests["check"]]
+        report["artifacts"] += build["artifacts"] + tests["artifacts"] + graph["artifacts"]
+        report["inputs_snapshot"] = graph["inputs_snapshot"]
+        report["generated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        for evidence in report["components"][0]["evidence"]:
+            evidence["checked_at"] = report["generated_at"]
+        return report
 
     def test_policy_prevents_report_weakening_checks_support_and_age(self):
         for mutation in ("missing-check", "support", "age", "scope", "owner", "version", "target", "exclusion"):

@@ -98,6 +98,66 @@ a required consumer/security check by setting its own `required` flag false. Exp
 `not_applicable` is accepted only where policy permits it and the report explains why.
 Policy component/version choices still need dated primary-source compatibility evidence.
 
+## Collect actual execution evidence
+
+Run `scripts/collect_evidence.py` only for explicitly authorized local verification. It
+accepts a command argument array after `--`; it executes that command without a shell.
+It never executes commands found in a report. Existing build scripts/plugins still execute
+their own code and use the existing environment/network policy. Inspect the actual command
+before running it; this helper is not a sandbox or a publishing authorization.
+
+```sh
+python3 <skill-directory>/scripts/collect_evidence.py \
+  --project <project> --policy <policy.json> --id tests --kind unit-tests \
+  --test-glob '**/target/surefire-reports/TEST-*.xml' \
+  --probe-json '["java","-version"]' -- ./mvnw clean verify
+```
+
+Use `**/target/failsafe-reports/TEST-*.xml` for Maven integration tests or
+`**/build/test-results/<task>/TEST-*.xml` for Gradle, adjusting custom report locations.
+Force Gradle tests to execute (`--rerun-tasks`, or the project's equivalent) rather than
+accepting cached/up-to-date XML. The runner rejects missing/stale XML, zero executed tests,
+failures/errors, unsuccessful processes/timeouts, changed project inputs and failed probes.
+It supports ordinary JUnit `testsuite`/`testsuites` counters; customized reporting needs
+an equivalent organization-owned collector. Historical XML is not a new executed test.
+
+Outputs stay under `.java-modernize/<id>/`, and each ID must be unused. The JSON output
+supplies report `check`, `artifacts` and input snapshot fragments. Merge artifact lists
+without rewriting recorded IDs/bytes; combine module graph entries. Native Java/Maven/
+Gradle/Python commands get a version probe automatically; add explicit probes for the
+compiler, forked test JVM or other effective tools. Inspect version logs, not guessed
+toolchain settings. The helper records no environment dump. Logs/XML can contain sensitive
+output: keep them local and apply existing data policy before sharing; argument redaction
+is conservative and cannot sanitize arbitrary child-process output.
+
+For graph collection use `--kind resolved-graph --module <module> --graph <relative-file>`
+and an explicit native graph command that writes a fresh nonempty file, such as pinned
+`maven-dependency-plugin:tree` with `-DoutputType=json -DoutputFile=target/dependencies.json`.
+For Gradle, use resolved configurations/tasks required by the project; native `dependencies`
+output can be captured in `.java-modernize/<id>/command.log`. These graph fragments are
+input evidence, not ordinary report checks. Cover plugin/buildscript/processor/native
+graphs separately when used: one application dependency tree does not establish all
+enterprise resolution or configurations.
+
+The live gate requires `execution_artifact_id` for every passing check and each module
+graph. It verifies process outcome/timestamps, unchanged input digest, policy digest,
+referenced logs/reports/graphs, and test counts directly from hashed XML. Baseline process
+evidence can describe the pre-migration inputs; other passing checks must describe the
+final input snapshot. Collect baseline test evidence separately and derive `tests_before`
+from it; set `baseline_execution_artifact_id` when supplying `tests_before`. Baseline
+collection accepts `--kind baseline --test-glob <pattern>`; the gate verifies the
+baseline count against that record. XML and graphs are copied into their execution
+directory so later `clean` builds cannot overwrite the earlier evidence.
+
+These are locally verifiable process records, not signed attestations. Someone who can
+rewrite all reports/records can forge them. Run collection/validation in trusted CI and
+retain its immutable results when release provenance matters. The gate checks consistency;
+review still establishes command scope, source authority and organizational policy.
+
+Sources: [Surefire reporting](https://maven.apache.org/surefire/maven-surefire-plugin/test-mojo),
+[Gradle test reporting](https://docs.gradle.org/current/userguide/java_testing.html),
+[Maven dependency tree options](https://maven.apache.org/plugins/maven-dependency-plugin/tree-mojo.html).
+
 The live gate additionally requires `inputs_snapshot`: `captured_at`, a map of every
 input file to its SHA-256, and `graphs` with module paths and resolved-graph artifact IDs
 for every module. Capture after validation with `scripts/snapshot.py <project>` and add
