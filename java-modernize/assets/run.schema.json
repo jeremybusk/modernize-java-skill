@@ -40,6 +40,10 @@
       }
     }},
     "next_action": {"$ref": "#/$defs/text"},
+    "links": {"type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["label", "url"],
+      "properties": {"label": {"$ref": "#/$defs/text"}, "url": {"type": "string", "pattern": "^https?://"}}
+    }},
     "deployment": {
       "type": "object", "additionalProperties": false, "required": ["status", "details"],
       "properties": {"status": {"enum": ["not_in_scope", "not_run", "partial", "deployed", "unknown"]}, "details": {"$ref": "#/$defs/text"}}

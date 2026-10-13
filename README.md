@@ -64,6 +64,48 @@ a static list of "latest" versions or run on a schedule. Requested bot configura
 can help with ongoing discovery. OpenRewrite and vendor plugins are optional accelerators,
 with exact artifact/access/license checks and manual fallback.
 
+## Timestamped plans and completion reports
+
+Substantial runs use a consistent assess → plan → execute → validate → completion
+workflow with [readable templates and a JSON run manifest](java-modernize/references/run-documents.md).
+Choose the repository, application, or workspace root explicitly:
+
+```sh
+python3 java-modernize/scripts/run_documents.py init \
+  --scope-root /path/to/project --repo app=. --slug java-maintenance
+```
+
+For example, a run creates:
+
+```text
+.java-modernize/runs/20261013T183012123456Z-java-maintenance/
+  20261013T183012123456Z-java-maintenance-run.json
+  20261013T183012123456Z-java-maintenance-index.md
+  20261013T183012123456Z-java-maintenance-assessment.md
+  20261013T183012123456Z-java-maintenance-plan.md
+  20261013T183012123456Z-java-maintenance-execution.md
+  20261013T183012123456Z-java-maintenance-validation.md
+  20261013T183012123456Z-java-maintenance-completion-summary.md
+```
+
+Every filename retains the UTC run timestamp when copied for review or committed.
+The same run keeps stable filenames; a new run gets a new timestamp. `--layout compact`
+combines the five phases in one timestamped report. A portable `.java-modernize/latest.json`
+pointer locates the most recently initialized run without requiring symlinks.
+
+Edit the canonical JSON summaries, findings, and batches; bind each repository's evidence
+report and render the Markdown. Version tables, Java targets, test counts, and outcomes
+come from those reports. `check` detects Markdown/JSON drift; `checkpoint` and `resume`
+detect changed inputs/policy and invalidate affected work. `check --require-complete`
+applies the independent live evidence gate to every repository. An audit or one incomplete
+repository cannot pass as a completed implementation.
+
+For several repositories, use `--scope-kind workspace` and repeated `--repo ID=path`
+arguments, with paths relative to the selected workspace. One workspace plan coordinates
+repository and batch dependencies; evidence remains in each repository under the same
+run ID. See the contract for exact commands, phase rules, source/evidence links, and
+sharing guidance. Generated files are never automatically staged or committed.
+
 ## Install the same folder for your agent
 
 Copy the complete **`java-modernize/`** directory, including its references, optional

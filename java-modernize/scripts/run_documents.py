@@ -12,7 +12,7 @@ import re
 from string import Template
 import subprocess
 import tempfile
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from snapshot import EXCLUDED_DIRS, capture, digest_file
 from validate_report import MAX_REPORT_BYTES, no_duplicates, reject_constant, safe_path, timestamp, validate
@@ -23,6 +23,10 @@ PHASES = ("assessment", "plan", "execution", "validation", "completion")
 RUN_ID = r"[0-9]{8}T[0-9]{12}Z-[a-z0-9]+(?:-[a-z0-9]+)*"
 
 
+class RunError(ValueError):
+    """A diagnostic with no interpolated private project values."""
+
+
 def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
@@ -31,25 +35,25 @@ def read_json(path):
     with Path(path).open("rb") as source:
         raw = source.read(MAX_REPORT_BYTES + 1)
     if len(raw) > MAX_REPORT_BYTES:
-        raise ValueError("JSON exceeds size bound")
+        raise RunError("JSON exceeds size bound")
     return json.loads(raw, object_pairs_hook=no_duplicates, parse_constant=reject_constant)
 
 
 def local_path(root, relative):
     """Explicit root-relative paths only; reject symlinks even inside the root."""
     if not safe_path(relative):
-        raise ValueError("Unsafe relative path")
+        raise RunError("Unsafe relative path")
     path = Path(root)
     for part in Path(relative).parts:
         path = path / part
         if path.is_symlink():
-            raise ValueError("Symlink in local path")
+            raise RunError("Symlink in local path")
     return path
 
 
 def atomic_write(path, content):
     if path.is_symlink():
-        raise ValueError("Refusing to replace a symlink")
+        raise RunError("Refusing to replace a symlink")
     name = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", dir=path.parent, delete=False) as output:
@@ -78,14 +82,14 @@ def git_baseline(root):
 def acyclic(items, label):
     by_id = {item["id"]: item for item in items}
     if len(by_id) != len(items):
-        raise ValueError(label + " IDs must be unique")
+        raise RunError(label + " IDs must be unique")
     pending = {key: set(value["depends_on"]) for key, value in by_id.items()}
     if any(not dependencies <= by_id.keys() for dependencies in pending.values()):
-        raise ValueError(label + " dependency is unknown")
+        raise RunError(label + " dependency is unknown")
     while pending:
         ready = {key for key, dependencies in pending.items() if not dependencies}
         if not ready:
-            raise ValueError(label + " dependency cycle")
+            raise RunError(label + " dependency cycle")
         pending = {key: dependencies - ready for key, dependencies in pending.items() if key not in ready}
 
 
@@ -94,57 +98,59 @@ def validate_manifest(data):
     schema = read_json(ASSETS / "run.schema.json")
     Draft202012Validator.check_schema(schema)
     if list(Draft202012Validator(schema).iter_errors(data)):
-        raise ValueError("Run manifest violates schema")
+        raise RunError("Run manifest violates schema")
     if timestamp(data["created_at"]) > timestamp(data["updated_at"]):
-        raise ValueError("Run update predates creation")
+        raise RunError("Run update predates creation")
     if not data["run_id"].startswith(timestamp(data["created_at"]).strftime("%Y%m%dT%H%M%S%fZ") + "-"):
-        raise ValueError("Run ID differs from creation timestamp")
+        raise RunError("Run ID differs from creation timestamp")
     acyclic(data["repositories"], "Repository")
     acyclic(data["batches"], "Batch")
     repos = {r["id"] for r in data["repositories"]}
     if len({f["id"] for f in data["findings"]}) != len(data["findings"]):
-        raise ValueError("Finding IDs must be unique")
+        raise RunError("Finding IDs must be unique")
     if any(f["repository"] not in repos for f in data["findings"]):
-        raise ValueError("Finding repository is unknown")
+        raise RunError("Finding repository is unknown")
     if any(not set(b["repositories"]) <= repos for b in data["batches"]):
-        raise ValueError("Batch repository is unknown")
+        raise RunError("Batch repository is unknown")
     for phase in data["phases"].values():
         if phase["status"] != "pending" and not phase["summary"].strip():
-            raise ValueError("Active or terminal phases require a summary")
+            raise RunError("Active or terminal phases require a summary")
     for name, phase in data["phases"].items():
         if phase["status"] == "not_applicable" and not (data["mode"] == "audit" and name in {"execution", "validation"}):
-            raise ValueError("Only audit execution/validation may be inapplicable")
+            raise RunError("Only audit execution/validation may be inapplicable")
         if phase["status"] == "complete":
             prior = PHASES[:PHASES.index(name)]
             if any(data["phases"][p]["status"] not in {"complete", "not_applicable"} for p in prior):
-                raise ValueError("A completed phase requires completed preceding phases")
+                raise RunError("A completed phase requires completed preceding phases")
     batches = {b["id"]: b for b in data["batches"]}
     for batch in batches.values():
         if batch["status"] == "not_applicable":
-            raise ValueError("Use a documented no-op batch instead of inapplicable execution")
+            raise RunError("Use a documented no-op batch instead of inapplicable execution")
         if batch["status"] in {"in_progress", "complete"} and any(batches[d]["status"] != "complete" for d in batch["depends_on"]):
-            raise ValueError("Batch dependencies must complete before execution")
+            raise RunError("Batch dependencies must complete before execution")
         if batch["status"] == "complete" and not batch["result"].strip():
-            raise ValueError("Completed batch requires an actual result")
+            raise RunError("Completed batch requires an actual result")
     if data["mode"] != "audit" and data["phases"]["plan"]["status"] == "complete" and not batches:
-        raise ValueError("Implementation plan requires testable batches, including a no-op if appropriate")
+        raise RunError("Implementation plan requires testable batches, including a no-op if appropriate")
     if data["mode"] != "audit" and data["phases"]["execution"]["status"] == "complete":
         covered = {rid for b in batches.values() for rid in b["repositories"]}
         if covered != repos or any(b["status"] != "complete" for b in batches.values()):
-            raise ValueError("Execution is incomplete across the required repository scope")
+            raise RunError("Execution is incomplete across the required repository scope")
     paths = []
     for repo in data["repositories"]:
         if not safe_path(repo["path"]):
-            raise ValueError("Unsafe repository path")
+            raise RunError("Unsafe repository path")
         path = Path(repo["path"])
         if any(path == old or path in old.parents or old in path.parents for old in paths):
-            raise ValueError("Repository scopes must not overlap; use modules within one report")
+            raise RunError("Repository scopes must not overlap; use modules within one report")
         paths.append(path)
         for field in ("report", "checkpoint"):
             if repo[field] and not safe_path(repo[field]["path"]):
-                raise ValueError("Unsafe report/checkpoint path")
+                raise RunError("Unsafe report/checkpoint path")
     if data["scope_kind"] != "workspace" and len(paths) != 1:
-        raise ValueError("Multiple repositories require workspace scope")
+        raise RunError("Multiple repositories require workspace scope")
+    if any(not safe_url(item["url"]) for item in data.get("links", [])):
+        raise RunError("Review links must be HTTP(S) URLs without credentials or whitespace")
 
 
 def load_run(manifest):
@@ -152,16 +158,16 @@ def load_run(manifest):
     # The fixed depth makes portable relative repository mappings unambiguous.
     directory = manifest.parent
     if directory.parent.name != "runs" or directory.parent.parent.name != ".java-modernize":
-        raise ValueError("Manifest must be in <scope>/.java-modernize/runs/<run-id>")
+        raise RunError("Manifest must be in <scope>/.java-modernize/runs/<run-id>")
     root = directory.parent.parent.parent.resolve(strict=True)
     local_path(root, manifest.relative_to(root).as_posix())
     data = read_json(manifest)
     validate_manifest(data)
     if directory.name != data["run_id"] or manifest.name != data["run_id"] + "-run.json":
-        raise ValueError("Manifest filename/directory differs from run ID")
+        raise RunError("Manifest filename/directory differs from run ID")
     for repo in data["repositories"]:
         if not local_path(root, repo["path"]).is_dir():
-            raise ValueError("Repository scope is unavailable")
+            raise RunError("Repository scope is unavailable")
     return data, root
 
 
@@ -173,17 +179,17 @@ def bound_reports(data, root):
             continue
         path = local_path(local_path(root, repo["path"]), binding["path"])
         if digest_file(path) != binding["sha256"]:
-            raise ValueError("Bound report changed; review and bind it again")
+            raise RunError("Bound report changed; review and bind it again")
         report = read_json(path)
         if validate(report) or report["mode"] != data["mode"]:
-            raise ValueError("Bound report is invalid or uses a different mode")
+            raise RunError("Bound report is invalid or uses a different mode")
         for key in ("revision", "dirty"):
             if repo["baseline"][key] is not None and repo["baseline"][key] != report["baseline"][key]:
-                raise ValueError("Report contradicts the recorded starting baseline")
+                raise RunError("Report contradicts the recorded starting baseline")
         reports[repo["id"]] = report
     if data["phases"]["completion"]["status"] == "complete" or (data["mode"] != "audit" and data["phases"]["validation"]["status"] == "complete"):
         if len(reports) != len(data["repositories"]) or any(r["status"] != "complete" for r in reports.values()):
-            raise ValueError("Completion requires complete reports for every repository")
+            raise RunError("Completion requires complete reports for every repository")
     return reports
 
 
@@ -191,7 +197,9 @@ def text(value):
     """Render all authored fields as text, never injected Markdown links/HTML."""
     value = "unknown" if value is None else str(value)
     value = html.escape(value, quote=False).replace("\r", " ").replace("\n", " ")
-    return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", value)
+    value = re.sub(r"([\\`*_\[\]|])", r"\\\1", value)
+    value = re.sub(r"^([#>+\-])", r"\\\1", value)
+    return re.sub(r"^(\d+)([.)])(?=\s)", r"\1\\\2", value)
 
 
 def table(headers, rows):
@@ -210,6 +218,20 @@ def link(label, path, directory):
     return "[" + text(label) + "](" + quote(relative, safe="/.-_") + ")"
 
 
+def safe_url(value):
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme in {"http", "https"} and bool(parsed.hostname) and not parsed.username and not parsed.password and not any(c.isspace() or ord(c) < 32 for c in value)
+    except ValueError:
+        return False
+
+
+def source_link(value, label=None):
+    if safe_url(value):
+        return "[" + text(label or value) + "](" + quote(value, safe=":/?&=%#@+;,-._~") + ")"
+    return text(value)
+
+
 def documents(data, root, directory, reports):
     run_id = data["run_id"]
     names = {p: run_id + "-" + ("completion-summary" if p == "completion" else p) + ".md" for p in PHASES}
@@ -218,6 +240,7 @@ def documents(data, root, directory, reports):
     metadata = lambda phase: "---\n" + "\n".join(k + ": " + json.dumps(v) for k, v in {
         "schema_version": 1, "run_id": run_id, "phase": phase, "updated_at": data["updated_at"],
         "manifest": run_id + "-run.json", "generated": True,
+        "status": data["phases"][phase if phase in PHASES else "completion"]["status"],
     }.items()) + "\n---"
     navigation = [link("Canonical run JSON", directory / (run_id + "-run.json"), directory)]
     navigation += [link("Report" if data["layout"] == "compact" else p.title(), directory / (compact_name if data["layout"] == "compact" else names[p]), directory) for p in (("completion",) if data["layout"] == "compact" else PHASES)]
@@ -231,7 +254,7 @@ def documents(data, root, directory, reports):
         "baselines": table(["Repository", "Starting revision", "Pre-existing changes", "Observation"], ((r["id"], r["baseline"]["revision"], r["baseline"]["dirty"], r["baseline"]["description"]) for r in data["repositories"])),
         "constraints": bullets(rid + ": " + value for rid, r in reports.items() for value in r["constraints"]),
         "findings": table(["ID", "Repository", "Priority", "Observation", "Action"], ((f["id"], f["repository"], f["priority"], f["observation"], f["action"]) for f in data["findings"])),
-        "components": table(["Repository / component", "Owner", "Current → selected", "Decision", "Reason"], ((rid + "/" + c["id"], c["owner"], str(c["current"]) + " → " + str(c["selected"]), c["action"], c["reason"]) for rid, r in reports.items() for c in r["components"])),
+        "components": table(["Repository / component", "Owner", "Current → selected", "Decision", "Reason"], ((rid + "/" + c["id"], c["owner"], (str(c["current"]) if c["current"] is not None else "unknown") + " → " + (str(c["selected"]) if c["selected"] is not None else "unselected"), c["action"], c["reason"]) for rid, r in reports.items() for c in r["components"])),
         "batches": table(["Batch", "Repositories", "Dependencies", "Status", "Goal"], ((b["id"], ", ".join(b["repositories"]), ", ".join(b["depends_on"]) or "none", b["status"], b["goal"]) for b in data["batches"])),
         "criteria": table(["Batch", "Success criteria / checks", "Recovery boundary"], ((b["id"], b["validation"], b["recovery"]) for b in data["batches"])),
         "changes": table(["Batch", "Files (repository:path)", "Status", "Result / commit"], ((b["id"], ", ".join(b["files"]), b["status"], b["result"]) for b in data["batches"])),
@@ -243,6 +266,8 @@ def documents(data, root, directory, reports):
         "next_actions": bullets([data["next_action"]] + [rid + ": " + value for rid, r in reports.items() for value in r["next_actions"]]),
         "recovery": bullets(b["id"] + ": " + b["recovery"] for b in data["batches"]),
         "deployment": text(data["deployment"]["status"] + ": " + data["deployment"]["details"]),
+        "links": "\n".join("- " + source_link(item["url"], item["label"]) for item in data.get("links", [])) or "No commit, CI, review, or release links recorded.",
+        "sources": "\n".join("- " + text(rid + "/" + c["id"] + " — " + e["kind"] + " — checked " + e["checked_at"]) + ": " + source_link(e["source"]) for rid, r in reports.items() for c in r["components"] for e in c["evidence"]) or "No dated source evidence recorded.",
     }
     evidence = []
     for repo in data["repositories"]:
@@ -253,7 +278,7 @@ def documents(data, root, directory, reports):
         for artifact in reports[repo["id"]]["artifacts"]:
             path = local_path(repo_root, artifact["path"])
             if not path.is_file():
-                raise ValueError("Artifact link is unavailable")
+                raise RunError("Artifact link is unavailable")
             evidence.append("- " + link(repo["id"] + "/" + artifact["id"], path, directory))
     common["evidence"] = "\n".join(evidence) or "No evidence report is bound."
     result = {index_name: Template((ASSETS / "run-templates/index.md").read_text(encoding="utf-8")).substitute(common)}
@@ -264,9 +289,9 @@ def documents(data, root, directory, reports):
         content = Template((ASSETS / ("run-templates/" + phase + ".md")).read_text(encoding="utf-8")).substitute(values)
         sections.append(content)
         if data["layout"] == "expanded":
-            result[names[phase]] = metadata(phase) + "\n" + "\n".join(["", link("Run index", directory / index_name, directory), "", content])
+            result[names[phase]] = metadata(phase) + "\n" + "\n".join(["", "# " + text(data["title"]) + " — " + phase.title(), "", link("Run index", directory / index_name, directory), "", content])
     if data["layout"] == "compact":
-        result[compact_name] = metadata("report") + "\n\n" + link("Run index", directory / index_name, directory) + "\n\n" + "\n".join(sections)
+        result[compact_name] = metadata("report") + "\n\n# " + text(data["title"]) + "\n\n" + link("Run index", directory / index_name, directory) + "\n\n" + "\n".join(sections)
     return result
 
 
@@ -275,11 +300,14 @@ def render(manifest, *, check=False):
     reports = bound_reports(data, root)
     directory = Path(manifest).absolute().parent
     expected = documents(data, root, directory, reports)
+    managed = {data["run_id"] + "-" + suffix + ".md" for suffix in (*PHASES[:-1], "completion-summary", "report", "index")}
+    if any(local_path(directory, name).exists() for name in managed - expected.keys()):
+        raise RunError("Conflicting generated layouts; restore the original layout or initialize a new run")
     for name, content in expected.items():
         path = local_path(directory, name)
         if check:
             if not path.is_file() or path.read_text(encoding="utf-8") != content:
-                raise ValueError("Markdown is missing or differs from canonical JSON; render again")
+                raise RunError("Markdown is missing or differs from canonical JSON; render again")
         else:
             atomic_write(path, content)
     return data
@@ -288,14 +316,14 @@ def render(manifest, *, check=False):
 def initialize(root, slug, repositories, *, title=None, mode="maintain-java", layout="expanded", scope_kind="repository", scope_reason="Explicit scope root selected for this modernization."):
     root = Path(root).resolve(strict=True)
     if not root.is_dir() or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug) or len(slug) > 60:
-        raise ValueError("Choose an existing scope directory and a short lowercase slug")
+        raise RunError("Choose an existing scope directory and a short lowercase slug")
     created = utc_now()
     run_id = timestamp(created).strftime("%Y%m%dT%H%M%S%fZ") + "-" + slug
     repos = []
     for repo_id, relative in repositories.items():
         project = local_path(root, relative)
         if not project.is_dir():
-            raise ValueError("Repository directory is unavailable")
+            raise RunError("Repository directory is unavailable")
         repos.append({"id": repo_id, "path": Path(relative).as_posix(), "depends_on": [], "baseline": git_baseline(project), "report": None, "checkpoint": None})
     data = {
         "schema_version": 1, "run_id": run_id, "created_at": created, "updated_at": created,
@@ -303,6 +331,7 @@ def initialize(root, slug, repositories, *, title=None, mode="maintain-java", la
         "scope_kind": scope_kind, "scope_reason": scope_reason, "repositories": repos,
         "phases": {p: {"status": "pending", "summary": "", "notes": []} for p in PHASES},
         "findings": [], "batches": [], "next_action": "Assess the baseline, constraints, version owners, and required checks.",
+        "links": [],
         "deployment": {"status": "not_in_scope", "details": "No deployment has been performed by this run helper."},
     }
     validate_manifest(data)
@@ -321,7 +350,7 @@ def assignments(values):
     for value in values:
         key, separator, path = value.partition("=")
         if not separator or not key or not path or key in result:
-            raise ValueError("Expected unique ID=path assignments")
+            raise RunError("Expected unique ID=path assignments")
         result[key] = path
     return result
 
@@ -330,7 +359,7 @@ def bind_report(manifest, repository, relative):
     data, root = load_run(manifest)
     repo = next((r for r in data["repositories"] if r["id"] == repository), None)
     if repo is None:
-        raise ValueError("Unknown repository ID")
+        raise RunError("Unknown repository ID")
     path = local_path(local_path(root, repo["path"]), relative)
     repo["report"] = {"path": relative, "sha256": digest_file(path)}
     bound_reports(data, root)
@@ -343,7 +372,7 @@ def checkpoint(manifest, policies):
     from policy import load_policy
     data, root = load_run(manifest)
     if not policies.keys() <= {r["id"] for r in data["repositories"]}:
-        raise ValueError("Unknown checkpoint policy repository")
+        raise RunError("Unknown checkpoint policy repository")
     pending = []
     for repo in data["repositories"]:
         project = local_path(root, repo["path"])
@@ -353,12 +382,12 @@ def checkpoint(manifest, policies):
             excluded = policy["input_scope"]["excluded_dirs"]
             policy_hash = hashlib.sha256(raw).hexdigest()
         if ".java-modernize" not in excluded:
-            raise ValueError("Checkpoint policy must exclude generated run output")
+            raise RunError("Checkpoint policy must exclude generated run output")
         record = {"schema_version": 1, "captured_at": utc_now(), "revision": git_baseline(project)["revision"], "excluded_dirs": excluded, "policy_sha256": policy_hash, "files": capture(project, excluded)}
         name = timestamp(record["captured_at"]).strftime("%Y%m%dT%H%M%S%fZ") + "-checkpoint.json"
         path = local_path(project, ".java-modernize/runs/" + data["run_id"] + "/" + name)
         if path.exists():
-            raise ValueError("Checkpoint already exists")
+            raise RunError("Checkpoint already exists")
         pending.append((repo, project, path, record))
     for repo, project, path, record in pending:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -376,17 +405,17 @@ def resume(manifest, policies):
     from policy import load_policy
     data, root = load_run(manifest)
     if not policies.keys() <= {r["id"] for r in data["repositories"]}:
-        raise ValueError("Unknown resume policy repository")
+        raise RunError("Unknown resume policy repository")
     stale = set()
     for repo in data["repositories"]:
         project = local_path(root, repo["path"])
         try:
             binding = repo["checkpoint"]
             if binding is None:
-                raise ValueError("No checkpoint")
+                raise RunError("No checkpoint")
             path = local_path(project, binding["path"])
             if digest_file(path) != binding["sha256"]:
-                raise ValueError("Checkpoint hash changed")
+                raise RunError("Checkpoint hash changed")
             saved = read_json(path)
             excluded, policy_hash = sorted(EXCLUDED_DIRS), None
             if repo["id"] in policies:
@@ -394,13 +423,13 @@ def resume(manifest, policies):
                 excluded = policy["input_scope"]["excluded_dirs"]
                 policy_hash = hashlib.sha256(raw).hexdigest()
             if saved["policy_sha256"] != policy_hash or set(saved["excluded_dirs"]) != set(excluded):
-                raise ValueError("Checkpoint scope or policy differs")
+                raise RunError("Checkpoint scope or policy differs")
             if saved["files"] != capture(project, excluded) or saved["revision"] != git_baseline(project)["revision"]:
-                raise ValueError("Checkpoint inputs or revision differ")
+                raise RunError("Checkpoint inputs or revision differ")
             if repo["report"]:
                 report_path = local_path(project, repo["report"]["path"])
                 if digest_file(report_path) != repo["report"]["sha256"]:
-                    raise ValueError("Report drift")
+                    raise RunError("Report drift")
         except (OSError, ValueError, KeyError, TypeError):
             stale.add(repo["id"])
     # Consumers of a changed repository need reconsideration too.
@@ -440,15 +469,15 @@ def check_completion(manifest, policies, *, now=None):
     data = render(manifest, check=True)
     _, root = load_run(manifest)
     if data["mode"] == "audit" or any(p["status"] != "complete" for p in data["phases"].values()):
-        raise ValueError("Run is not a completed implementation")
+        raise RunError("Run is not a completed implementation")
     if set(policies) != {r["id"] for r in data["repositories"]}:
-        raise ValueError("Supply one independent policy per repository")
+        raise RunError("Supply one independent policy per repository")
     reports = bound_reports(data, root)
     for repo in data["repositories"]:
         policy, raw = load_policy(policies[repo["id"]])
         errors = validate(reports[repo["id"]], local_path(root, repo["path"]), require_complete=True, now=now, project_policy=policy, policy_sha256=hashlib.sha256(raw).hexdigest())
         if errors:
-            raise ValueError("Repository live completion gate failed")
+            raise RunError("Repository live completion gate failed")
     return data
 
 
@@ -494,9 +523,11 @@ def main():
             print(json.dumps({"valid": True, "run_id": data["run_id"], "live_completion_checked": True, "implementation_complete": True}))
         else:
             if args.operation == "check" and args.policy:
-                raise ValueError("Use --require-complete to check independent policies")
+                raise RunError("Use --require-complete to check independent policies")
             data = render(args.manifest, check=args.operation == "check")
             print(json.dumps({"valid": True, "run_id": data["run_id"], "live_completion_checked": False}))
+    except RunError as error:
+        parser.exit(2, str(error) + "\n")
     except (OSError, ValueError, RuntimeError, ImportError, UnicodeError, RecursionError) as error:
         # Error details deliberately omit project values, which can contain secrets.
         parser.exit(2, "Run operation failed: " + type(error).__name__ + "; inspect schema, paths, bindings, and generated document consistency\n")

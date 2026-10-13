@@ -44,6 +44,12 @@ available toolchains, permitted network/repositories, and actual required checks
 substantial work, capture a plan with version owners, dependent batches, validation,
 and rollback boundaries using the repository's conventions. Reuse existing authorization.
 
+For substantial work or requested saved documents, read [run documents](references/run-documents.md).
+Use its timestamped assessment, plan, execution, validation, and completion templates
+unless an equivalent format exists. Select the repository/application/workspace root
+explicitly; keep multi-repository evidence bound to each repository. Small tasks can use
+one compact report. Honor read-only audit constraints before creating any output files.
+
 Read [inventory and build guidance](references/inventory-and-build.md). Optionally run:
 
 ```sh
@@ -99,6 +105,10 @@ behavior changes, then optional idiom improvements. Deprecation alone is not a b
 Choose coherent batches such as wrapper/plugins, platform/framework, tests/coverage,
 application libraries, deployment configuration, and source refactors.
 
+Record batch IDs, dependencies, success criteria, and recovery boundaries before edits.
+Keep the run's phase summaries and next action current; render shared facts from the
+bound evidence reports rather than maintaining separate Markdown version/check tables.
+
 For JDK changes, read [JDK migration](references/jdk-migration.md), including every
 crossed release boundary. Where supported, first test on the target runtime/toolchain
 while keeping the old compilation target, then raise that target if in scope. This
@@ -135,6 +145,8 @@ replacement, and recurring automation require scope/authorization beyond local e
 Before resuming an interrupted batch, compare the current revision/configuration and
 resolved graph with recorded evidence; invalidate stale checks and candidates after
 changes. Do not reset, stash, commit, or publish existing work merely to create a checkpoint.
+For saved runs, compare the recorded checkpoint with current inputs and policy using
+the run helper or equivalent tooling; reassess changed scope and dependent repositories.
 
 ## 5. Validate the resulting application
 
@@ -161,6 +173,11 @@ For enterprise work, produce a reviewable report and its JSON companion using
 format already provides equivalent evidence. Validate the companion with the optional
 helper or the organization's JSON Schema tooling. The helper checks structure, consistency,
 and optionally artifact hashes; it cannot certify compatibility or deployment readiness.
+
+For saved runs, render and check the timestamped completion summary and provide its path.
+Use the live run completion gate when claiming current verified implementation completion;
+every repository must pass with its independently supplied policy. Keep implementation,
+validation, and deployment outcomes separate. A completed audit is an assessment outcome.
 
 For repeated maintenance, re-inventory and re-check live sources on each invocation.
 If everything within scope is already current and compatible, report an evidence-backed

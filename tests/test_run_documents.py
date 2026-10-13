@@ -9,6 +9,8 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.parse import unquote
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "java-modernize/scripts"))
@@ -47,6 +49,11 @@ class RunDocumentTests(unittest.TestCase):
         manifest = Path(json.loads(call.stdout)["manifest"])
         self.assertEqual(len(list(manifest.parent.glob("*.md"))), 2)
         runs.render(manifest, check=True)
+        data = runs.read_json(manifest)
+        data["layout"] = "expanded"
+        runs.write_json(manifest, data)
+        with self.assertRaises(ValueError):
+            runs.render(manifest)
 
     def test_same_timestamp_refuses_to_overwrite(self):
         with patch.object(runs, "utc_now", return_value="2026-10-13T12:00:00.123456Z"):
@@ -92,6 +99,30 @@ class RunDocumentTests(unittest.TestCase):
             runs.render(manifest, check=True)
         runs.render(manifest)
         runs.render(manifest, check=True)
+
+    def test_review_links_and_generated_relative_links_survive_space_paths(self):
+        manifest = self.initialize(mode="audit")
+        data = runs.read_json(manifest)
+        data["links"] = [{"label": "CI result", "url": "https://example.com/runs/42"}]
+        report = runs.read_json(ROOT / "java-modernize/assets/enterprise-report.example.json")
+        artifact = self.root / ".java-modernize/evidence with spaces.log"
+        artifact.write_text("Synthetic log", encoding="utf-8")
+        report["artifacts"] = [{"id": "log", "path": artifact.relative_to(self.root).as_posix(), "sha256": runs.digest_file(artifact)}]
+        path = manifest.parent / (data["run_id"] + "-evidence-report.json")
+        runs.write_json(path, report)
+        runs.write_json(manifest, data)
+        runs.bind_report(manifest, "app", path.relative_to(self.root).as_posix())
+        for document in manifest.parent.glob("*.md"):
+            content = document.read_text(encoding="utf-8")
+            for target in re.findall(r"\]\(([^)]+)\)", content):
+                if not target.startswith("https://"):
+                    self.assertTrue((document.parent / unquote(target)).is_file(), target)
+        summary = manifest.parent / (data["run_id"] + "-completion-summary.md")
+        self.assertIn("[CI result](https://example.com/runs/42)", summary.read_text())
+        data = runs.read_json(manifest)
+        data["links"][0]["url"] = "https://user:secret@example.com/run"
+        with self.assertRaises(ValueError):
+            runs.validate_manifest(data)
 
     def test_bound_report_drift_and_missing_evidence_link_reject(self):
         manifest = self.initialize(mode="audit")

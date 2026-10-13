@@ -113,3 +113,31 @@ collectors. [Run 38460355851](https://github.com/jeremybusk/modernize-java-skill
 supplies the hosted result. All five requested improvement steps are implemented and
 validated; detailed platform outcomes and bounded coverage are recorded in
 [platform-validation.md](platform-validation.md).
+
+## Step 6 — timestamped lifecycle documents and coordinated runs
+
+Implemented in three validated increments: `4b516c6` introduces timestamped run storage,
+JSON schema and rendered Markdown templates; `5361667` adds run-scoped process evidence,
+immutable input checkpoints, dependency-aware invalidation and workspace completion gates;
+the final increment integrates the workflow into the skill and improves source/review
+links, standalone document metadata, diagnostics and native-build coverage.
+
+Runs use explicit repository/application/workspace roots and portable relative mappings.
+The UTC timestamp and slug appear in every lifecycle document filename and the manifest.
+A JSON latest-run pointer avoids symlink requirements. Compact and expanded layouts render
+shared facts from bound repository reports. Audits remain distinct from implementation;
+each repository must pass its independent live gate for overall implementation completion.
+
+Validation on 2026-10-13: 62 default tests pass, with six opt-in integration skips. The
+selected native integration also passes against actual Maven and Gradle builds: one test
+executes per project, both resolved graphs and tool probes are captured under run-scoped
+paths, and checkpoint/resume plus generated-document consistency checks pass. Synthetic
+two-repository process fixtures separately exercise all-repository live completion,
+partial-repository rejection, changed inputs/policy, and downstream invalidation.
+
+Skill metadata, local documentation links, archive checksums/reproducibility and whitespace
+checks pass. The existing CI matrix discovers the added tests and the updated native
+integration automatically. This increment was validated locally; no new hosted workflow
+or authenticated agent evaluation was run. Earlier hosted/agent results above describe
+their recorded commits, not this new document workflow. These checks establish document
+and evidence consistency, not arbitrary application compatibility or deployment approval.

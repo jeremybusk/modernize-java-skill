@@ -15,3 +15,7 @@ $findings
 ### Version decisions
 
 $components
+
+### Dated source evidence
+
+$sources

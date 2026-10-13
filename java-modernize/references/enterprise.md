@@ -100,8 +100,9 @@ Sources: [Revapi](https://revapi.org/revapi-site/main/),
 
 ## Batches, recovery and rollout boundaries
 
-For substantial migrations, keep a compact plan/checkpoint using existing conventions:
-baseline revision and dirty state; module/consumer scope; version owners and sources;
+For substantial migrations, keep a compact plan/checkpoint using existing conventions;
+use the [timestamped run contract](run-documents.md) when no equivalent layout exists.
+Record baseline revision and dirty state; module/consumer scope; version owners and sources;
 ordered dependency batches; required checks/environments; changed files/artifact hashes;
 completed and pending work; unresolved constraints; temporary flags/overrides and removal
 conditions. Redact credentials and private data before sharing it.

@@ -43,6 +43,9 @@ claims and file hashes; it does not execute or independently prove the listed ch
 
 Use existing repository reporting conventions. For substantial work, a single report
 with the following content is enough; create extra plan/progress files only if useful.
+For requested saved documents or substantial runs, use the compact or expanded
+[timestamped run templates](run-documents.md). The run helper renders repeated facts from
+the JSON evidence companions and checks that the Markdown remains consistent.
 
 1. **Scope and Java settings:** mode, constraints, per-module build/compiler/release/
    test/deployment JVMs before/after, including explicitly unchanged settings.

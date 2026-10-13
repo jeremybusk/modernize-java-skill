@@ -30,6 +30,8 @@ The expanded layout produces timestamp-prefixed `index.md`, `assessment.md`, `pl
 `run.json`. Use `--mode audit` for an assessment without implementation. Creating saved
 documents is itself a filesystem edit: for an explicitly read-only/no-files audit,
 return the report in the conversation unless an external output location was authorized.
+Choose the layout at initialization; changing layouts later requires a new run so older
+generated summaries cannot silently remain alongside a conflicting current document set.
 
 For a coordinated workspace:
 
@@ -59,6 +61,11 @@ status, and repository mappings. Initialize the real run rather than copying inv
 observations. Edit its JSON to record actual findings and decisions; update `updated_at`
 to the actual UTC time. Free-text fields render as text rather than executable Markdown.
 Use `repository:path` in batch file lists and record commit IDs in batch results.
+The optional `links` array takes `label` and HTTP(S) `url` entries for commits, CI results,
+reviews, and releases. It generates clickable completion links; the helper does not fetch
+them or infer successful CI/deployment from their presence. Dated source links render
+from component evidence. Each Markdown file includes a title and machine-readable YAML
+frontmatter identifying the run, phase, recorded status, update time, and JSON manifest.
 
 Each repository's `report` is null until available, then contains a project-relative
 `path` and the exact file `sha256` of its [enterprise evidence report](enterprise-report.md).
@@ -153,6 +160,11 @@ and freshness windows. A missing policy, incomplete repository, changed input, s
 evidence, or Markdown drift rejects the overall gate. It does not execute report commands.
 It does not certify deployment, business acceptance, or authenticity of local records.
 Deployment status remains separately recorded and requires actual external evidence.
+
+JSON parsing/schema validation requires pre-provisioned `jsonschema` 4.x, as with the
+enterprise report validator. There are no automatic package installs or network calls.
+If the helper is unavailable, use the same templates and contract with existing tooling;
+report which automated consistency/live checks were not run.
 
 Keep relative directory structure when sharing the full run and evidence. Individual
 timestamped documents can be copied for review, but their relative evidence links need
