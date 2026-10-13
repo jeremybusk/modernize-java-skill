@@ -90,3 +90,22 @@ Maven dependency-plugin 3.11.0 JSON tree, Gradle native dependency output, and a
 build-tool probes. The retained-copy integration rerun passes in 12.909 seconds. Failure,
 timeout, changed-input, stale/zero/failing XML, contradictory process/count/graph and
 invented baseline-count cases reject. Skill metadata and whitespace checks pass.
+
+## Step 5 — reproducible CI and real agent evaluations
+
+Resolved and hash-locked every development dependency, retaining Python 3.10 support.
+All four Linux/Windows and Python 3.10/3.14 wheel combinations resolve with enforced
+hashes; 46 default tests pass in the exact locked local environment (six explicit
+integration skips). The CI expansion adds five full migrations, native execution-evidence
+tests, pinned/checksummed Maven/Gradle/JDK provisioning, and retained synthetic artifacts.
+
+Installed Codex 0.162.1, Claude Code 2.1.270 and Copilot 1.0.88 each pass the same
+corrected private-parent audit and exact same-Java maintenance edit. Independent builds
+execute one test before/after, preserve Java 17 bytecode, pass packaged HTTP startup,
+and confirm a no-op second agent request. Harness fixture/tool-allowlist errors found
+during evaluation were corrected and affected cases rerun successfully.
+
+The remote became available during this step. Hosted step-4 CI already passed, and the
+expanded workflow will be executed after committing the locally validated step-5 work.
+Detailed platform outcomes and remaining execution status are recorded in
+[platform-validation.md](platform-validation.md).

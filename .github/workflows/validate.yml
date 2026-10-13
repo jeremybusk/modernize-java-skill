@@ -35,10 +35,86 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Install validator dependencies
-        run: python -m pip install -r requirements-dev.txt
+        run: 'python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.txt'
       - name: Run package, report, inventory and Java fixture checks
         run: python -m unittest discover -s tests -v
       - name: Validate the incomplete report example
         run: python java-modernize/scripts/validate_report.py java-modernize/assets/enterprise-report.example.json
+      - name: Validate the independent policy example
+        run: python java-modernize/scripts/policy.py java-modernize/assets/project-policy.example.json
       - name: Build checksummed skill archive
         run: python scripts/package_skill.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: skill-${{ matrix.os }}-python-${{ matrix.python }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+          overwrite-settings: false
+      - name: Install hash-locked validator dependencies
+        run: 'python -m pip install --require-hashes --only-binary=:all: -r requirements-dev.txt'
+      - name: Provision pinned integration toolchains
+        run: |
+          python scripts/bootstrap_integration.py --directory "$RUNNER_TEMP/tools" --jdk-feature 8
+          python scripts/bootstrap_integration.py --directory "$RUNNER_TEMP/tools" --jdk-feature 25
+          python scripts/bootstrap_integration.py --directory "$RUNNER_TEMP/tools" --gradle
+          python scripts/bootstrap_integration.py --directory "$RUNNER_TEMP/tools" --maven
+      - name: Export actual provisioned tool paths
+        shell: python
+        run: |
+          import json, os
+          from pathlib import Path
+          tools = Path(os.environ['RUNNER_TEMP']) / 'tools'
+          values = {
+              'JAVA_MODERNIZE_JDK8': json.loads((tools / 'jdk8.json').read_text())['jdk_home'],
+              'JAVA_MODERNIZE_JDK25': json.loads((tools / 'jdk25.json').read_text())['jdk_home'],
+              'JAVA_MODERNIZE_JDK21': os.environ['JAVA_HOME'],
+              'JAVA_MODERNIZE_GRADLE': str(Path(json.loads((tools / 'gradle.json').read_text())['gradle_home']) / 'bin/gradle'),
+              'JAVA_MODERNIZE_MAVEN': str(Path(json.loads((tools / 'maven.json').read_text())['maven_home']) / 'bin/mvn'),
+              'JAVA_MODERNIZE_M2_REPO': str(Path(os.environ['RUNNER_TEMP']) / 'java-modernize-m2'),
+              'JAVA_MODERNIZE_GRADLE_HOME': str(Path(os.environ['RUNNER_TEMP']) / 'java-modernize-gradle-cache'),
+          }
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              for key, value in values.items():
+                  output.write(f'{key}={value}\n')
+      - name: Complete five migrations with tests, startup and stable reruns
+        run: python scripts/run_migration_scenarios.py --output dist/integration-summary.json
+      - name: Collect native Maven and Gradle execution evidence
+        env:
+          JAVA_MODERNIZE_EVIDENCE_E2E: '1'
+        run: python -m unittest discover -s tests -p test_evidence_integration.py -v
+      - name: Retain summaries and synthetic execution logs
+        if: always()
+        shell: python
+        run: |
+          import shutil, tempfile
+          from pathlib import Path
+          output = Path('dist/integration-evidence')
+          output.mkdir(parents=True, exist_ok=True)
+          for project in Path(tempfile.gettempdir()).glob('java-modernize-e2e-*'):
+              for source in [project / 'logs', *project.glob('*/.java-modernize')]:
+                  if source.is_dir():
+                      name = project.name + '-' + source.parent.name + '-' + source.name.lstrip('.')
+                      shutil.copytree(source, output / name, dirs_exist_ok=True)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: complete-migration-evidence
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

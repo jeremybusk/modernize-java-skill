@@ -54,7 +54,9 @@ the required checks are complete and the reported outcomes are true.
 The repository includes CI for Linux/Windows and Python 3.10/3.14, with a JDK 17 fixture
 environment, pinned action commits, read-only permissions, and disabled checkout credential
 persistence. It validates inventory, reports, Java API/behavior fixtures, local links,
-notices and package integrity. Actual production migrations still require the target
+notices and package integrity. A separate Linux job executes all five full migration
+scenarios and native Maven/Gradle evidence collection, retaining synthetic execution
+logs and checksummed skill archives. Actual production migrations still require the target
 application's tests, policy, deployment environment and release process.
 
 The skill verifies candidates against live sources when invoked; it does not contain
@@ -132,7 +134,8 @@ This repository is the skill package, not a Java application; its tests cannot p
 that every downstream project will migrate successfully.
 
 For development, use Python 3.10+ and install `requirements-dev.txt` in a permitted
-environment; CI pins the report-validator dependency. JDK 17+ enables the actual
+environment. The lock includes direct/transitive versions and official wheel hashes;
+CI enforces `--require-hashes --only-binary=:all:`. JDK 17+ enables the actual
 compile/runtime fixture tests. These verify older API targets, class-file levels,
 mutability/null/whitespace contracts and unavailable newer APIs. Set
 `JAVA_MODERNIZE_REQUIRE_JDK=1` to fail rather than skip them when a JDK is absent.
@@ -164,7 +167,45 @@ all needed artifacts are cached. The full unittest profile uses `JAVA_MODERNIZE_
 with `JAVA_MODERNIZE_JDK8`, `JAVA_MODERNIZE_JDK25`, `JAVA_MODERNIZE_JDK21` and
 `JAVA_MODERNIZE_GRADLE` paths; missing prerequisites fail that selected profile.
 The optional Linux x64 bootstrap helper downloads checksum-verified, pinned test JDKs
+and Gradle (`--gradle`) or Maven (`--maven`)
 under `/tmp`; it is never invoked automatically by the skill.
+
+The native evidence profile uses `JAVA_MODERNIZE_EVIDENCE_E2E=1` with the Java 21,
+Gradle and Maven-cache paths above. It executes actual builds and checks captured
+Surefire/Gradle XML and native resolved graphs. See the
+[execution evidence contract](java-modernize/references/enterprise-report.md).
+
+Installed Codex, Claude and Copilot CLIs can be evaluated with:
+
+```sh
+python3 scripts/run_agent_evaluations.py --agent codex
+```
+
+Use `--agent claude` or `--agent copilot`, or omit the option for all three. This is an
+explicit, authenticated model evaluation and may consume the account's model usage.
+It creates synthetic projects under the system temporary directory, installs the same
+skill in each agent's project location, and tests an offline private-parent audit plus
+a specific same-Java patch. The harness independently builds/tests/starts each patch
+and asks the agent to repeat it without further source changes. Agent logs and JSON
+results remain local. This tests explicit invocation, not automatic skill routing or
+every product surface. Versioned results and limits are recorded in
+[platform validation](research/platform-validation.md).
+
+To refresh the Python lock deliberately, resolve from the oldest supported Python and
+review the resulting versions before regenerating official wheel hashes:
+
+```sh
+python3 -m pip install --dry-run --ignore-installed --only-binary=:all: \
+  --python-version 3.10 --report /tmp/java-modernize-resolution.json \
+  -r requirements-dev.in 'typing-extensions>=4.4.0'
+python3 scripts/lock_requirements.py /tmp/java-modernize-resolution.json
+```
+
+The explicit typing-extensions input covers referencing's Python <3.13 dependency even
+when the resolver itself runs on newer Python. Test the full Linux/Windows matrix after
+refreshing; newer dependencies may drop Python 3.10. The committed rpds-py 0.30.0 pin
+preserves that supported floor. Hashes establish expected artifact bytes, not publisher
+identity or security suitability; use existing organizational provenance controls.
 
 ## Maintenance and license
 
