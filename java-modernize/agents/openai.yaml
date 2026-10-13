@@ -1,0 +1,4 @@
+interface:
+  display_name: "Java Modernize"
+  short_description: "Upgrade Java or refresh its ecosystem on the same JDK"
+  default_prompt: "Use $java-modernize to modernize this project, verify current compatible versions, and validate the changes."
