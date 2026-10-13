@@ -14,6 +14,10 @@ Record the source and scope of each material constraint. Use the user's explicit
 and existing authorization; ask only for a missing constraint that changes the outcome.
 Do not fabricate a risk owner, waiver, approval, ticket, or commercial support entitlement.
 
+For the optional machine gate, establish a separate reviewed project policy before edits;
+see [the report contract](enterprise-report.md). It defines scope and required checks
+independently of the resulting report. Supply its trusted copy to CI and retain its digest.
+
 An enterprise vendor's support statement may differ from upstream OSS support. Verify
 the selected distribution and actual entitlement through available organizational evidence.
 If access is missing, report support as unverified. Do not infer enterprise support from

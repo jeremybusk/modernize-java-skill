@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "source": "Example only: replace with actual reviewed repository policy and user constraints",
+  "mode": "maintain-java",
+  "evidence_max_age_days": 7,
+  "require_supported_updates": true,
+  "input_scope": {
+    "excluded_dirs": [
+      ".git",
+      ".gradle",
+      "target",
+      "build",
+      ".java-modernize"
+    ],
+    "rationale": "Generated outputs and local evidence only; all sources, wrappers, build and deployment inputs remain covered."
+  },
+  "modules": [
+    {
+      "path": ".",
+      "targets": {
+        "compilation_target": 17,
+        "deployment_runtime": 17
+      },
+      "preserve": [
+        "compilation_target",
+        "deployment_runtime"
+      ]
+    }
+  ],
+  "components": [
+    {
+      "id": "example-library",
+      "owner": "pom.xml",
+      "allowed_actions": [
+        "update",
+        "keep"
+      ],
+      "selected_versions": [
+        "1.0.1"
+      ]
+    }
+  ],
+  "checks": [
+    {
+      "id": "build",
+      "kind": "build",
+      "allowed_statuses": [
+        "passed"
+      ]
+    },
+    {
+      "id": "tests",
+      "kind": "unit-tests",
+      "allowed_statuses": [
+        "passed"
+      ]
+    }
+  ]
+}

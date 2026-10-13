@@ -50,9 +50,15 @@ def capture(root, excluded_dirs=EXCLUDED_DIRS):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project")
+    parser.add_argument("--policy", help="Reviewed project policy controlling input exclusions")
     args = parser.parse_args()
     try:
-        print(json.dumps({"captured_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "files": capture(args.project), "graphs": []}, indent=2))
+        excluded = EXCLUDED_DIRS
+        if args.policy:
+            from policy import load_policy
+            policy, _ = load_policy(args.policy)
+            excluded = policy["input_scope"]["excluded_dirs"]
+        print(json.dumps({"captured_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "files": capture(args.project, excluded), "graphs": []}, indent=2))
     except (OSError, ValueError):
         parser.exit(2, "Cannot capture a complete input snapshot; inspect input scope and file access\n")
 

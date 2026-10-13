@@ -43,7 +43,7 @@ implementations and does not treat a completed audit as a completed migration.
 
 ```sh
 python3 java-modernize/scripts/validate_report.py /path/to/report.json \
-  --project-root /path/to/project --require-complete
+  --project-root /path/to/project --policy /path/to/reviewed-policy.json --require-complete
 ```
 
 Report validation needs a pre-provisioned `jsonschema` 4.x environment or equivalent

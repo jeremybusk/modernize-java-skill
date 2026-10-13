@@ -26,6 +26,9 @@ class ReportTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.report = json.loads((ROOT / "java-modernize/assets/enterprise-report.example.json").read_text())
+        self.policy = json.loads((ROOT / "java-modernize/assets/project-policy.example.json").read_text())
+        self.policy["source"] = self.report["policy"]["source"]
+        self.policy["components"][0]["id"] = "platform"
 
     def completed(self):
         report = copy.deepcopy(self.report)
@@ -83,8 +86,12 @@ class ReportTests(unittest.TestCase):
         report["checks"][0]["command"] = "touch command-was-executed"
         (self.root / ".java-modernize").mkdir()
         path = self.root / ".java-modernize/report.json"
+        policy_path = path.parent / "policy.json"
+        policy_bytes = (json.dumps(self.policy) + "\n").encode()
+        policy_path.write_bytes(policy_bytes)
+        report["policy_binding"] = {"sha256": hashlib.sha256(policy_bytes).hexdigest()}
         path.write_text(json.dumps(report))
-        call = subprocess.run([sys.executable, str(SCRIPT), str(path), "--project-root", str(self.root), "--require-complete"], capture_output=True, text=True)
+        call = subprocess.run([sys.executable, str(SCRIPT), str(path), "--project-root", str(self.root), "--require-complete", "--policy", str(policy_path)], capture_output=True, text=True)
         self.assertEqual(call.returncode, 0, call.stderr + call.stdout)
         self.assertTrue(json.loads(call.stdout)["artifact_hashes_checked"])
         self.assertFalse(marker.exists())
@@ -127,6 +134,65 @@ class ReportTests(unittest.TestCase):
         except OSError:
             self.skipTest("Directory symlinks are unavailable")
         self.assertTrue(any("coverage" in e for e in MODULE.validate(report, self.root, require_complete=True)))
+
+    def policy_gate(self, report, policy=None):
+        policy = policy or self.policy
+        digest = hashlib.sha256(json.dumps(policy).encode()).hexdigest()
+        report["policy_binding"] = {"sha256": digest}
+        return MODULE.validate(report, self.root, require_complete=True, now=MODULE.timestamp(report["generated_at"]), project_policy=policy, policy_sha256=digest)
+
+    def test_policy_gate_accepts_matching_reviewed_scope(self):
+        self.assertEqual(self.policy_gate(self.completed()), [])
+
+    def test_policy_prevents_report_weakening_checks_support_and_age(self):
+        for mutation in ("missing-check", "support", "age", "scope", "owner", "version", "target", "exclusion"):
+            report = self.completed()
+            if mutation == "missing-check":
+                policy = copy.deepcopy(self.policy)
+                policy["checks"].append({"id": "consumer-contract", "kind": "contract", "allowed_statuses": ["passed"]})
+                errors = self.policy_gate(report, policy)
+            else:
+                if mutation == "support":
+                    report["policy"]["require_supported_updates"] = False
+                elif mutation == "age":
+                    report["policy"]["evidence_max_age_days"] = 999
+                elif mutation == "scope":
+                    report["components"] = []
+                elif mutation == "owner":
+                    report["components"][0]["owner"] = "test.log"
+                elif mutation == "version":
+                    report["components"][0]["selected"] = "2.0.0"
+                elif mutation == "target":
+                    report["modules"][0]["before"]["compilation_target"] = 21
+                    report["modules"][0]["after"]["compilation_target"] = 21
+                else:
+                    (self.root / "src").mkdir(exist_ok=True)
+                    (self.root / "src/Main.java").write_text("class Main {}")
+                    # A report cannot shrink exclusions independently of policy.
+                errors = self.policy_gate(report)
+            self.assertTrue(errors, mutation)
+
+    def test_policy_binding_rejects_changed_bytes_and_missing_policy(self):
+        report = self.completed()
+        self.assertTrue(any("independent" in e for e in MODULE.validate(report, self.root, require_complete=True)))
+        self.assertTrue(any("binding" in e for e in MODULE.validate(report, self.root, require_complete=True, project_policy=self.policy, policy_sha256="f" * 64)))
+
+    def test_policy_schema_rejects_unsafe_scope_duplicate_checks_and_missing_build(self):
+        from policy import validate_policy
+        self.assertEqual(validate_policy(self.policy), [])
+        for mutation in ("unsafe", "duplicate", "no-build", "unknown-field", "unbounded-age"):
+            policy = copy.deepcopy(self.policy)
+            if mutation == "unsafe":
+                policy["modules"][0]["path"] = "../outside"
+            elif mutation == "duplicate":
+                policy["checks"].append(copy.deepcopy(policy["checks"][0]))
+            elif mutation == "no-build":
+                policy["checks"] = policy["checks"][1:]
+            elif mutation == "unknown-field":
+                policy["unexpected"] = True
+            else:
+                policy["evidence_max_age_days"] = None
+            self.assertTrue(validate_policy(policy), mutation)
 
     def test_complete_cli_cannot_omit_hash_check_root(self):
         path = self.root / "report.json"

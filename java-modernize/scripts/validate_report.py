@@ -37,7 +37,7 @@ def unique_ids(items, location, errors):
     return set(ids)
 
 
-def validate(report, project_root=None, *, require_complete=False, now=None):
+def validate(report, project_root=None, *, require_complete=False, now=None, project_policy=None, policy_sha256=None):
     try:
         from jsonschema import Draft202012Validator, FormatChecker
     except ImportError:
@@ -61,6 +61,46 @@ def validate(report, project_root=None, *, require_complete=False, now=None):
 
     generated = timestamp(report["generated_at"])
     complete = report["status"] == "complete" and report["mode"] != "audit"
+    if project_policy is not None:
+        from policy import validate_policy
+        policy_errors = validate_policy(project_policy)
+        if policy_errors:
+            return policy_errors
+    if require_complete and complete:
+        if project_policy is None:
+            errors.append("/policy: completion gate requires an independent project policy")
+        else:
+            if not policy_sha256 or report.get("policy_binding", {}).get("sha256") != policy_sha256:
+                errors.append("/policy_binding: policy bytes differ from reviewed report binding")
+            declared = report["policy"]
+            if any(declared[key] != project_policy[key] for key in ("source", "evidence_max_age_days", "require_supported_updates")) or report["mode"] != project_policy["mode"]:
+                errors.append("/policy: report contradicts independent project policy")
+            modules = {m["path"]: m for m in report["modules"]}
+            if set(modules) != {m["path"] for m in project_policy["modules"]}:
+                errors.append("/policy/modules: report omits or adds module scope")
+            for m in project_policy["modules"]:
+                actual = modules.get(m["path"])
+                if actual is None:
+                    continue
+                if any(actual["after"][role] != target for role, target in m["targets"].items()):
+                    errors.append("/policy/modules: required Java target not achieved")
+                for role in m["preserve"]:
+                    if actual["before"][role] is None or actual["before"][role] != actual["after"][role]:
+                        errors.append("/policy/modules: required preserved Java role changed or unknown")
+            components = {c["id"]: c for c in report["components"]}
+            if set(components) != {c["id"] for c in project_policy["components"]}:
+                errors.append("/policy/components: report omits or adds assessment scope")
+            for c in project_policy["components"]:
+                actual = components.get(c["id"])
+                if actual is None:
+                    continue
+                if actual["owner"] != c["owner"] or actual["action"] not in c["allowed_actions"] or (actual["action"] != "defer" and actual["selected"] not in c["selected_versions"]):
+                    errors.append("/policy/components: owner, action or selected version violates project policy")
+            checks = {c["id"]: c for c in report["checks"]}
+            for c in project_policy["checks"]:
+                actual = checks.get(c["id"])
+                if actual is None or actual["kind"] != c["kind"] or actual["status"] not in c["allowed_statuses"]:
+                    errors.append("/policy/checks: required check is missing, mismatched or unsuccessful")
     validation_time = now or datetime.now(timezone.utc)
     age_origin = validation_time if require_complete else generated
     if require_complete and complete:
@@ -175,7 +215,9 @@ def validate(report, project_root=None, *, require_complete=False, now=None):
             if any(not safe_path(path) for path in snapshot["files"]):
                 errors.append("/inputs_snapshot: unsafe input path")
             try:
-                if snapshot["files"] != capture(root):
+                exclusions = project_policy["input_scope"]["excluded_dirs"] if project_policy is not None else None
+                current_files = capture(root, exclusions) if exclusions is not None else capture(root)
+                if snapshot["files"] != current_files:
                     errors.append("/inputs_snapshot: current input set or hashes differ from validated inputs")
             except (OSError, ValueError):
                 errors.append("/inputs_snapshot: cannot verify complete input coverage")
@@ -228,6 +270,7 @@ def main():
     parser.add_argument("report")
     parser.add_argument("--project-root", help="Verify artifact hashes against this directory")
     parser.add_argument("--require-complete", action="store_true", help="Gate on complete implementation; audits do not pass this gate")
+    parser.add_argument("--policy", help="Independent, reviewed project policy required by the live completion gate")
     args = parser.parse_args()
     if args.require_complete and args.project_root is None:
         parser.error("--require-complete requires --project-root to check recorded artifacts")
@@ -237,7 +280,12 @@ def main():
         if len(raw) > MAX_REPORT_BYTES:
             raise ValueError("Report size limit")
         report = json.loads(raw, object_pairs_hook=no_duplicates, parse_constant=reject_constant)
-        errors = validate(report, args.project_root, require_complete=args.require_complete)
+        project_policy, policy_hash = None, None
+        if args.policy:
+            from policy import load_policy
+            project_policy, raw_policy = load_policy(args.policy)
+            policy_hash = hashlib.sha256(raw_policy).hexdigest()
+        errors = validate(report, args.project_root, require_complete=args.require_complete, project_policy=project_policy, policy_sha256=policy_hash)
     except (OSError, ValueError, UnicodeError, RuntimeError, RecursionError):
         print("Cannot validate report: check input, project root and pre-provisioned jsonschema 4.x", file=sys.stderr)
         return 2

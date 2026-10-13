@@ -14,7 +14,7 @@ checks cross-field consistency and can verify local artifact hashes.
 ```sh
 python3 <skill-directory>/scripts/validate_report.py <report.json>
 python3 <skill-directory>/scripts/validate_report.py <report.json> --project-root <project>
-python3 <skill-directory>/scripts/validate_report.py <report.json> --project-root <project> --require-complete
+python3 <skill-directory>/scripts/validate_report.py <report.json> --project-root <project> --policy <policy.json> --require-complete
 ```
 
 The optional helper needs a pre-provisioned Python environment with `jsonschema` 4.x
@@ -82,14 +82,32 @@ against actual validation time. Ordinary validation uses the report timestamp so
 reports remain inspectable. Audits can complete as
 audits while honestly reporting unverified candidates and checks not run.
 
+The live gate requires an independently supplied, reviewed project policy, validated
+against [the policy schema](../assets/project-policy.schema.json). Adapt
+[the policy example](../assets/project-policy.example.json) to actual repository/user
+constraints before implementation; never invent organizational requirements. Validate
+with `scripts/policy.py <policy.json>`. Pass the same file using `--policy`, and bind
+its exact bytes with `policy_binding.sha256` in the report. Store reviewed policy in
+version control or supply its immutable trusted copy in CI; the report cannot choose
+a weaker file. A hash binds bytes, not reviewer identity or approval.
+
+The policy supplies exact module/component scope, preserved/target Java roles, permitted
+actions and selected versions, required check IDs/kinds and permitted outcomes, support
+rules, bounded evidence age, and input exclusions with rationale. A report cannot omit
+a required consumer/security check by setting its own `required` flag false. Explicit
+`not_applicable` is accepted only where policy permits it and the report explains why.
+Policy component/version choices still need dated primary-source compatibility evidence.
+
 The live gate additionally requires `inputs_snapshot`: `captured_at`, a map of every
 input file to its SHA-256, and `graphs` with module paths and resolved-graph artifact IDs
 for every module. Capture after validation with `scripts/snapshot.py <project>` and add
-actual graph references; an empty graph list is deliberately incomplete. Any added,
+actual graph references; pass `--policy <policy.json>` when capturing custom scope.
+An empty graph list is deliberately incomplete. Any added,
 deleted or modified input invalidates the gate. The default scope hashes all files,
 including wrapper JARs, source/resources, build configuration and deployment/CI files,
 except directories named `.git`, `.gradle`, `target`, `build` or `.java-modernize`.
 Keep generated reports/logs under `.java-modernize` to avoid hashing the report itself.
+Review the policy exclusions; remove any name that contains actual source inputs.
 Resolve source directories/symlinks or relevant external settings outside this scope
 before claiming coverage. Enumeration/access/size failures reject the gate.
 

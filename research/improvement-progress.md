@@ -60,3 +60,17 @@ Validation: 37 default tests pass, five full-build tests skip; added live stale/
 added/changed/deleted input, graph coverage and symlink/wrapper cases. Example report,
 skill metadata and whitespace checks pass. Actual execution provenance is addressed
 in step 4; supplied graph/log references do not yet prove a command was executed.
+
+## Step 3 — independent project policy
+
+Added a strict project-policy schema/example and read-only validator. Live completion
+requires a separately supplied policy file and its exact SHA-256 binding. The gate checks
+module/component scope, selected versions/actions/owners, Java targets and preservation,
+required check identities/outcomes, support, evidence age and snapshot exclusions.
+Policy changes belong in reviewed project instructions/CI inputs; the hash alone is not
+proof of reviewer identity. Examples do not establish organizational requirements.
+
+Validation: 41 default tests pass, five integrations skip; policy and report examples,
+skill metadata and whitespace checks pass. Adversarial cases remove required checks or
+weaken support, age, scope, owner, versions, Java targets and input coverage; all reject.
+Malformed/duplicate policy scope and missing builds reject. Matching policy/report passes.
